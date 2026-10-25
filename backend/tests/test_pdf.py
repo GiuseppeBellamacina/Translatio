@@ -176,12 +176,13 @@ def test_substitute_fonts_of_a_translated_pdf_are_recognised():
     assert font_family("LiberationSans", 0) == "sans"
 
 
-def _book_page(doc, paragraphs: list[str], number: int):
+def _book_page(doc, paragraphs: list[str], number: int, footer: str = "{n} | Pagina"):
     page = doc.new_page(width=595, height=842)
     html = "".join(f'<p style="text-indent: 20px; margin-top: 12px;">{p}</p>' for p in paragraphs)
     page.insert_htmlbox(pymupdf.Rect(72, 72, 523, 770), html, css="* {font-size: 12px;}")
     page.insert_htmlbox(
-        pymupdf.Rect(400, 795, 523, 812), f"<p style='text-align: right;'>{number} | Pagina</p>"
+        pymupdf.Rect(400, 795, 523, 812),
+        f"<p style='text-align: right;'>{footer.format(n=number)}</p>",
     )
 
 
@@ -219,3 +220,27 @@ async def test_a_translation_can_be_saved_as_continuous_text(llm, sample_pdf):
     assert events[-1].event_type == "job_complete"
     out = pymupdf.open(events[-1].data["output_path"])
     assert "BAU" in " ".join(page.get_text() for page in out)
+
+
+def test_reflow_loses_no_text_and_keeps_the_footer_wording():
+    from app.services.pdf_reflow import reflow
+
+    doc, n = pymupdf.open(), 0
+    for page in range(30):
+        if page % 4 == 3:  # many illustrations: the flow restarts at many heights
+            art = doc.new_page(width=595, height=842)
+            art.insert_image(art.rect, pixmap=pymupdf.Pixmap(pymupdf.csGRAY, (0, 0, 40, 60), False))
+            continue
+        count = 3 + page % 5
+        paragraphs = [
+            f"Marca{n + k} " + "parola " * (20 + 7 * ((n + k) % 6)) + "fine." for k in range(count)
+        ]
+        n += count
+        _book_page(doc, paragraphs, page + 1, footer="Pagina | {n}")
+    out = reflow(doc)
+    body = " ".join(" ".join(p.get_text().split()) for p in out)
+    assert all(f"Marca{k} " in body for k in range(n))
+    footers = [
+        (j, " ".join(p.get_text().split())) for j, p in enumerate(out) if "Pagina" in p.get_text()
+    ]
+    assert footers and all(t.endswith(f"Pagina | {j + 1}") for j, t in footers)
