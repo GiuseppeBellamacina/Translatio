@@ -91,7 +91,12 @@ def reflow(src: pymupdf.Document) -> pymupdf.Document:
     body = max(common) if common else sizes.most_common(1)[0][0]  # pages that did not shrink
 
     page_rect = src[full[0]].rect
-    footer = next((b for i in full for b in pages[i] if _is_footer(b, heights[i])), None)
+    footers = [b for i in full for b in pages[i] if _is_footer(b, heights[i])]
+    wordings = Counter(re.sub(r"\d+", "#", b.text) for b in footers)
+    footer = next(
+        (b for b in footers if re.sub(r"\d+", "#", b.text) == wordings.most_common(1)[0][0]),
+        None,
+    )  # the most common one: a few may have been left untranslated ("Page")
     rules = [
         d["rect"] for d in src[full[0]].get_drawings() if d["rect"].y0 > page_rect.height * 0.88
     ]
@@ -209,14 +214,23 @@ def reflow(src: pymupdf.Document) -> pymupdf.Document:
         state["pages"] += 1
         state["y"] = content.y0
 
+    min_room = body * line * 1.5  # a line and its spacing
+
     def place(html: str):
+        # a story given (almost) no room reports "done" without placing anything: its whole
+        # text would be lost, so it always starts with at least a line of room
+        if state["device"] is None or content.y1 - state["y"] < min_room:
+            new_page()
         story = pymupdf.Story(html=html, user_css=_FONT_CSS, archive=archive)
         more = 1
         while more:
-            if state["device"] is None:
-                new_page()
             rect = pymupdf.Rect(content.x0, state["y"], content.x1, content.y1)
             more, filled = story.place(rect)
+            if filled[3] <= rect.y0 and more:  # nothing fitted: next page
+                if state["y"] == content.y0:
+                    raise ValueError("an element taller than a whole page")  # not a loop
+                new_page()
+                continue
             story.draw(state["device"])
             state["y"] = filled[3]
             if more:
@@ -285,13 +299,14 @@ def reflow(src: pymupdf.Document) -> pymupdf.Document:
         else:
             for r in rules:
                 page.draw_rect(r, color=None, fill=(0, 0, 0), width=0)
-        if label_from is not None:
-            label = re.sub(r"^\d+", str(n + 1), label_from.text)
+        if label_from is not None and footer is not None:
+            # the book's usual wording ("Pagina | 29" or "29 | Pagina"), at this page's place
+            label = re.sub(r"\d+", str(n + 1), footer.text, count=1)
             box = pymupdf.Rect(label_from.bbox) + (-60, -2, 2, 4)
-            css = f"{_css_style(label_from.style)} text-align: right;"
+            css = f"{_css_style(footer.style)} text-align: right;"
             page.insert_htmlbox(
                 box,
-                f'<p style="{css}">{block_html(label_from, label)}</p>',
+                f'<p style="{css}">{block_html(footer, label)}</p>',
                 css=_FONT_CSS,
                 archive=archive,
             )
