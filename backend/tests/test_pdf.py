@@ -174,3 +174,48 @@ def test_substitute_fonts_of_a_translated_pdf_are_recognised():
     assert font_family("Caladea-Bold", 0) == "caladea"
     assert font_family("LiberationSerif-Italic", 0) == "serif"
     assert font_family("LiberationSans", 0) == "sans"
+
+
+def _book_page(doc, paragraphs: list[str], number: int):
+    page = doc.new_page(width=595, height=842)
+    html = "".join(f'<p style="text-indent: 20px; margin-top: 12px;">{p}</p>' for p in paragraphs)
+    page.insert_htmlbox(pymupdf.Rect(72, 72, 523, 770), html, css="* {font-size: 12px;}")
+    page.insert_htmlbox(
+        pymupdf.Rect(400, 795, 523, 812), f"<p style='text-align: right;'>{number} | Pagina</p>"
+    )
+
+
+def test_reflow_flows_the_text_floats_illustrations_and_renumbers():
+    from app.services.pdf_reflow import reflow
+
+    words = "parole " * 30
+    para = [f"Paragrafo {n}: {words}fine." for n in range(40)]
+    doc = pymupdf.open()
+    _book_page(doc, para[0:6], 1)
+    _book_page(doc, para[6:7], 2)  # a short page before an illustration
+    art = doc.new_page(width=595, height=842)
+    pix = pymupdf.Pixmap(pymupdf.csRGB, pymupdf.IRect(0, 0, 60, 80), False)
+    pix.clear_with(180)
+    art.insert_image(art.rect, pixmap=pix)
+    _book_page(doc, para[7:12] + [f"Paragrafo 12: {words}e il taglio"], 4)  # cut by the page end
+    _book_page(doc, [f"continua qui, {words}fine."] + para[13:18], 5)
+
+    out = reflow(doc)
+    texts = [" ".join(p.get_text().split()) for p in out]
+    body = " ".join(texts)
+    positions = [body.find(f"Paragrafo {n}:") for n in [*range(0, 13), *range(13, 18)]]
+    assert -1 not in positions and positions == sorted(positions)  # all there, in order
+    assert "e il taglio continua qui" in body  # joined again
+    art_at = next(i for i, p in enumerate(out) if p.get_image_info())
+    assert "Paragrafo 7:" in texts[art_at - 1]  # the short page filled, the art right after
+    numbered = [(n, t) for n, t in enumerate(texts) if n != art_at]  # the art had no footer
+    assert all(t.endswith(f"{n + 1} | Pagina") for n, t in numbered)
+
+
+async def test_a_translation_can_be_saved_as_continuous_text(llm, sample_pdf):
+    events = await translate(
+        sample_pdf, TranslationPipeline(llm=llm, enable_review=False), reflow=True
+    )
+    assert events[-1].event_type == "job_complete"
+    out = pymupdf.open(events[-1].data["output_path"])
+    assert "BAU" in " ".join(page.get_text() for page in out)

@@ -464,11 +464,16 @@ class PdfDocument(Document):
         ]
         return "<html><body>" + "".join(f"<p>{p}</p>" for p in paragraphs) + "</body></html>"
 
-    def save(self, path: Path, translations: Translations) -> Path:
+    def save(self, path: Path, translations: Translations, reflow: bool = False) -> Path:
         out = pymupdf.open(self.path)  # fresh copy: keeps metadata, outline, links
         for index, page_translations in translations.items():
             if page_translations:
                 typeset(out[index], self.page_blocks(index), page_translations)
+        if reflow:  # continuous text instead of page by page (services/pdf_reflow.py)
+            from app.services.pdf_reflow import reflow as reflow_pdf
+
+            typeset_doc, out = out, reflow_pdf(out)
+            typeset_doc.close()
         path.parent.mkdir(parents=True, exist_ok=True)
         # every insert_htmlbox embeds whole font files: subset them and merge duplicates
         out.subset_fonts()

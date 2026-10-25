@@ -53,8 +53,9 @@ class Document(ABC):
         return None
 
     @abstractmethod
-    def save(self, path: Path, translations: Translations) -> Path:
-        """Write the translated document (same format as the input)."""
+    def save(self, path: Path, translations: Translations, reflow: bool = False) -> Path:
+        """Write the translated document (same format as the input). ``reflow``: PDF only,
+        continuous text instead of page by page (an EPUB always flows)."""
 
     @abstractmethod
     def info(self) -> dict:
@@ -90,7 +91,7 @@ class EpubDocument(Document):
     def render(self, index: int, translations: list[str | None] | None) -> str | None:
         return self._translated_content(index, translations).decode("utf-8", errors="replace")
 
-    def save(self, path: Path, translations: Translations) -> Path:
+    def save(self, path: Path, translations: Translations, reflow: bool = False) -> Path:
         # Apply translated content in-place on the original book to preserve the
         # EPUB structure exactly (CSS, TOC, manifest, spine, spacing).
         for index, item in enumerate(self._items):
