@@ -31,8 +31,8 @@ class CompendiumEntry(BaseModel):
     gender: Literal["male", "female", "unknown", "n/a"] = Field(
         default="unknown",
         description="For characters: the gender to use for agreement in the target language, "
-        "only when the text makes it clear (pronouns, titles, descriptions); else unknown. "
-        "n/a for places and things",
+        "only when the text shows it (pronouns, titles, descriptions), quoted in evidence; "
+        "else unknown. n/a for places and things",
     )
     aliases: list[str] = Field(
         default_factory=list,
@@ -43,12 +43,14 @@ class CompendiumEntry(BaseModel):
         default="",
         description="One short sentence of facts that matter for the translation: role, "
         "relations, how they speak or address others, a fixed translation choice. Written in "
-        "the language of the source text",
+        "the language of the source text, without implying a gender the gender field does "
+        "not give",
     )
     evidence: str = Field(
         default="",
-        description="Only to correct a gender the COMPENDIUM lists: the few words of THIS "
-        "passage, copied exactly, that prove the right one (e.g. 'she drew her sword')",
+        description="Whenever a gender is given: the few words of THIS passage, copied "
+        "exactly, that show it (e.g. 'she drew her sword'). Without them the gender is "
+        "ignored",
     )
 
 

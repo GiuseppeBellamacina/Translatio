@@ -165,3 +165,12 @@ async def test_short_pages_are_translated_together_and_saved_per_page(llm, tmp_p
     assert saved == {i: [line.upper()] for i, line in enumerate(lines)}
     out = pymupdf.open(events[-1].data["output_path"])
     assert [" ".join(page.get_text().split()) for page in out] == [line.upper() for line in lines]
+
+
+def test_substitute_fonts_of_a_translated_pdf_are_recognised():
+    from app.services.pdf_service import font_family
+
+    assert font_family("ABCDEF+Carlito Regular", 0) == "carlito"
+    assert font_family("Caladea-Bold", 0) == "caladea"
+    assert font_family("LiberationSerif-Italic", 0) == "serif"
+    assert font_family("LiberationSans", 0) == "sans"

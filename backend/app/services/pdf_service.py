@@ -74,11 +74,15 @@ class PdfBlock:
 
 
 def font_family(font_name: str, flags: int) -> str:
-    name = font_name.split("+")[-1].lower()
-    if "calibri" in name:
+    name = font_name.split("+")[-1].lower().replace(" ", "")
+    # the substitutes too: a translated PDF (read again, or reflowed) uses them
+    if "calibri" in name or "carlito" in name:
         return "carlito"
-    if "cambria" in name:
+    if "cambria" in name or "caladea" in name:
         return "caladea"
+    for family in ("mono", "serif", "sans"):
+        if f"liberation{family}" in name:
+            return family
     if flags & _FLAG_MONO or any(k in name for k in ("courier", "mono", "consol")):
         return "mono"
     if flags & _FLAG_SERIF or any(k in name for k in ("times", "serif", "georgia", "garamond")):

@@ -157,9 +157,14 @@ class CompendiumStore(_SharedStore):
         fresh.merge([compendium_entry(r) for r in rows if not r.user_edited])
         self.compendium.replace(fresh)
 
-    async def learn(self, updates: list[CompendiumEntry], source_text: str | None = None):
+    async def learn(
+        self,
+        updates: list[CompendiumEntry],
+        source_text: str | None = None,
+        language: str = "english",
+    ):
         """Fold updates in and persist the entries that changed."""
-        changed = self.compendium.merge(updates, source_text=source_text)
+        changed = self.compendium.merge(updates, source_text=source_text, language=language)
         if changed and self.members:
             async with self._lock:
                 await self._write(sorted(self.members), changed)

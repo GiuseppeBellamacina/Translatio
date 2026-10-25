@@ -64,10 +64,14 @@ def test_relevant_and_render():
 async def test_compendium_learned_in_one_chunk_reaches_later_prompts_and_the_reviewer(
     llm, sample_epub
 ):
+    NOTE = "The lighthouse keeper."
+
     def translate_handler(prompt, n):
         source = _extract_source_text(prompt)
         found = (
-            [e("Mara", gender="female", notes="The lighthouse keeper.")] if "Mara" in source else []
+            [e("Mara", gender="female", notes=NOTE, evidence="since she was a child")]
+            if "Mara" in source
+            else []
         )
         return TranslationResult(translated_text=meow_transform(source), compendium_updates=found)
 
@@ -107,8 +111,8 @@ async def test_a_gender_error_against_the_compendium_is_retranslated(llm, sample
 def test_only_names_of_the_source_text_are_kept():
     c = Compendium()
     c.merge(
-        [e("Roxy", gender="female", aliases=["la tutrice", "the tutor"])],
-        source_text="Roxy smiled. The tutor nodded.",
+        [e("Roxy", gender="female", aliases=["la tutrice", "the tutor"], evidence="she was proud")],
+        source_text="Roxy smiled. The tutor nodded; she was proud.",
     )
     assert c.entries == [e("Roxy", gender="female", aliases=["the tutor"])]
 
@@ -177,3 +181,22 @@ def test_a_character_is_followed_by_each_part_of_the_name_but_not_by_titles():
         "Hale",
     ]
     assert mention_names(e("Asura Kingdom", kind="place")) == ["Asura Kingdom"]
+
+
+def test_a_gender_needs_words_of_the_passage_that_show_it():
+    text = "Linia grinned. Pursena yawned. She shrugged and he laughed."
+    c = Compendium()
+    c.merge([e("Linia", gender="female")], text)  # a guess
+    c.merge([e("Pursena", gender="female", evidence="Pursena yawned")], text)  # no cue
+    c.merge([e("Zanoba", gender="female", evidence="she smiled")], "Zanoba arrived.")  # not quoted
+    c.merge(
+        [e("Rudeus", gender="male", evidence="She shrugged and he laughed")], "Rudeus ran. " + text
+    )
+    assert [x.gender for x in c.entries] == ["unknown"] * 4  # all without proof
+    [linia] = c.merge([e("Linia", gender="female", evidence="she shrugged")], text)
+    assert linia.gender == "female" and not linia.evidence  # filled, not a correction
+    # other source languages: the quote alone
+    italian = "Linia sorrise. Era stanca."
+    c2 = Compendium()
+    c2.merge([e("Linia", gender="female", evidence="Era stanca")], italian, language="italian")
+    assert c2.entries[0].gender == "female"

@@ -51,9 +51,10 @@ async def test_a_corrected_gender_bookmarks_the_passages_already_translated(llm,
     def handler(prompt, n):
         source = _extract_source_text(prompt)
         if "Mara lit the lamp" in source:
-            found = [CompendiumEntry(name="Mara", gender="female", evidence="Mara lit the lamp")]
+            proof = "She smiled for the first time"
+            found = [CompendiumEntry(name="Mara", gender="female", evidence=proof)]
         else:
-            found = [CompendiumEntry(name="Mara", gender="male")] if "Mara" in source else []
+            found = [CompendiumEntry(name="Mara")] if "Mara" in source else []  # unknown
         return TranslationResult(translated_text=meow_transform(source), compendium_updates=found)
 
     llm.handlers[TranslationResult] = handler
