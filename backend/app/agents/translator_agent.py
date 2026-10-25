@@ -45,8 +45,11 @@ does not reveal it, prefer wording that does not commit to a gender
 characters (with their gender when pronouns, titles or descriptions make it clear), places \
 and other recurring elements, new aliases, and short notes useful to translate them \
 consistently. Only facts stated or clearly implied by the text; never repeat what is listed. \
-When the passage clearly contradicts a listed gender, report the entry with the right gender \
-and, in evidence, the words of the passage that prove it
+Give a gender only with, in evidence, the words of this passage that show it (a pronoun, a \
+title, a description of them); a gender without them is discarded. A character listed with \
+gender unknown: report the gender as soon as a passage shows it. When the passage clearly \
+contradicts a listed gender, report the entry with the right gender and the evidence. Notes \
+never imply a gender you do not give
 11. Report in doubts (at most 3) the places where you had to guess: a gender the text has not \
 revealed yet, who a pronoun refers to, a first-person line whose speaker you could not identify \
 for sure (its agreements depend on the speaker), an unknown term, wordplay. They are revisited \

@@ -29,6 +29,34 @@ def _quoted(quote: str, text: str) -> bool:
     return len(quote) > 3 and quote in " ".join(text.lower().split())
 
 
+_CUES = {
+    "female": {
+        "she", "her", "hers", "herself", "woman", "women", "girl", "girls", "lady", "ladies",
+        "sister", "daughter", "mother", "mom", "mum", "wife", "queen", "princess", "miss", "mrs",
+        "ms", "madam", "aunt", "niece", "grandmother", "granddaughter", "bride", "goddess",
+        "heroine", "maiden", "empress", "duchess", "countess", "baroness", "mistress", "lass",
+    },
+    "male": {
+        "he", "him", "his", "himself", "man", "men", "boy", "boys", "gentleman", "brother",
+        "son", "father", "dad", "husband", "king", "prince", "mr", "sir", "lord", "uncle",
+        "nephew", "grandfather", "grandson", "groom", "god", "emperor", "duke", "count",
+        "baron", "master", "lad",
+    },
+}  # fmt: skip
+
+
+def _shows(gender: str, evidence: str, text: str, language: str) -> bool:
+    """Whether ``evidence`` proves ``gender``: copied from ``text`` and, for an English
+    source, holding a word of that gender and none of the other ("she drew her sword")."""
+    if not _quoted(evidence, text):
+        return False
+    if not language.lower().startswith("en"):
+        return True  # shortcut: gendered words known for English only, add lists to check others
+    words = set(re.findall(r"[a-z]+", evidence.lower()))
+    other = "male" if gender == "female" else "female"
+    return bool(words & _CUES[gender]) and not words & _CUES[other]
+
+
 def _repeats(note: str, notes: str) -> bool:
     """Whether ``note`` says nothing new: its words are (nearly all) in ``notes`` already."""
     words, known = set(content_words(note)), set(content_words(notes))
@@ -80,15 +108,20 @@ class Compendium:
         return True
 
     def merge(
-        self, updates: list[CompendiumEntry], source_text: str | None = None, user: bool = False
+        self,
+        updates: list[CompendiumEntry],
+        source_text: str | None = None,
+        user: bool = False,
+        language: str = "english",
     ) -> list[CompendiumEntry]:
         """Fold updates into the compendium, returning the entries that changed.
 
         A new name becomes an entry; a known one (by name or alias) only gains what it
-        lacks: a gender when unknown, new aliases, new notes. A known gender is corrected
-        only with ``evidence`` quoted from ``source_text`` (kept on the entry: it marks the
-        correction). Entries written by the user are never changed. With ``source_text``,
-        an update whose name and aliases do not occur in it is dropped (hallucinated).
+        lacks: a gender when unknown, new aliases, new notes. Entries written by the user
+        are never changed. With ``source_text`` (the model's updates), an update whose name
+        and aliases do not occur in it is dropped (hallucinated), and a male/female gender
+        is taken only with ``evidence`` that proves it (``_shows``); a known gender changed
+        that way keeps its evidence (it marks the correction).
         """
         plain = _PLACEHOLDER.sub("", source_text) if source_text is not None else None
         changed: dict[int, CompendiumEntry] = {}
@@ -107,6 +140,12 @@ class Compendium:
                 names = names[:1] + [n for n in names[1:] if _mentioned(n, plain)]
             if not names:
                 continue
+            if (
+                plain is not None
+                and update.gender in ("male", "female")
+                and not _shows(update.gender, update.evidence, plain, language)
+            ):
+                update = update.model_copy(update={"gender": "unknown"})  # a guess
             index = self._find(update)
             if index is None:
                 # evidence is trusted only from stored rows (no source_text): it marks a correction
@@ -126,11 +165,7 @@ class Compendium:
             new = entry.model_copy(deep=True)
             if new.gender in ("unknown", "n/a") and update.gender in ("male", "female"):
                 new.gender = update.gender
-            elif (
-                {new.gender, update.gender} == {"male", "female"}
-                and plain is not None
-                and _quoted(update.evidence, plain)
-            ):
+            elif {new.gender, update.gender} == {"male", "female"} and plain is not None:
                 new.gender, new.evidence = update.gender, update.evidence.strip()
             for alias in names:
                 if self._register(index, alias):

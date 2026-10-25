@@ -234,7 +234,9 @@ async def test_compendium_is_persisted_reloaded_and_reset_on_restart(book_id, sa
 
     def handler(prompt, n):
         result = default(TranslationResult, [_human(prompt)])
-        result.compendium_updates = [CompendiumEntry(name="Mara", gender="female")]
+        result.compendium_updates = [
+            CompendiumEntry(name="Mara", gender="female", evidence="since she was a child")
+        ]
         return result
 
     llm.handlers[TranslationResult] = handler

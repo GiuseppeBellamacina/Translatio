@@ -24,9 +24,9 @@ translation (Princess Ariel)
 - Technical or domain-specific terms
 - Culturally significant phrases that need careful handling
 - The overall style and tone the translator should maintain
-- Entities for the book's compendium: the main characters (with their gender when pronouns, \
-titles or descriptions make it clear, aliases and a short note on who they are and how they \
-speak) and the recurring places""",
+- Entities for the book's compendium: the main characters (with their gender only when \
+pronouns, titles or descriptions in the text show it, quoting those words in evidence; else \
+unknown), aliases and a short note on who they are and how they speak, and the recurring places""",
         ),
         (
             "human",

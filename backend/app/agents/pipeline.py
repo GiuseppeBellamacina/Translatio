@@ -328,15 +328,20 @@ def build_chapter_graph(
         genders = {e.name: e.gender for e in compendium.entries}  # merged before any await
         changed = (
             await compendiums.learn(
-                state.current_compendium, source_text=_previous(state) + "\n" + chunk.text
+                state.current_compendium,
+                source_text=_previous(state) + "\n" + chunk.text,
+                language=state.source_language,
             )
             if features.learn_compendium
             else []
         )
         if changed:
-            # a male/female flip now (evidence stays on the entry: it is not the signal)
+            # a gender known now (proved, see Compendium.merge) that was unknown, the other
+            # one or missing: passages translated before may have the wrong agreements
             corrected = [
-                e.name for e in changed if {genders.get(e.name), e.gender} == {"male", "female"}
+                e.name
+                for e in changed
+                if e.gender in ("male", "female") and genders.get(e.name) != e.gender
             ]
             writer(
                 {
@@ -547,7 +552,9 @@ class TranslationPipeline:
                 source_text=text,
             )
         if self.features.learn_compendium:
-            await self.compendiums.learn(result.entities, source_text=text)
+            await self.compendiums.learn(
+                result.entities, source_text=text, language=self.source_language
+            )
         return result
 
     async def translate_chapter(
