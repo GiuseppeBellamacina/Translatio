@@ -161,6 +161,7 @@ class JobRunner:
                 completed=resume.completed,
                 analysis=resume.analysis,
                 bookmarks=resume.bookmarks,
+                reflow=config.reflow_pdf,
                 max_concurrency=params.get("max_concurrency", settings.max_concurrency),
             ):
                 await store.handle(event)

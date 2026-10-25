@@ -1,4 +1,4 @@
-import { FEATURES, type Features, type Provider, type RunConfig } from "./api";
+import { FEATURES, featureDefault, type Features, type Provider, type RunConfig } from "./api";
 
 export const LANGUAGES = [
   "english", "italian", "spanish", "french", "german", "portuguese", "dutch",
@@ -41,7 +41,7 @@ export function settingsFrom(
     sourceLang: languageName(known?.source_language ?? languages.source, "english"),
     targetLang: languageName(known?.target_language ?? languages.target, "italian"),
     style: known?.style_instructions ?? "",
-    features: Object.fromEntries(FEATURES.map(({ key }) => [key, known?.[key] ?? true])) as Features,
+    features: Object.fromEntries(FEATURES.map((f) => [f.key, known?.[f.key] ?? featureDefault(f)])) as Features,
   };
 }
 

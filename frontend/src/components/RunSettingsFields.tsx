@@ -1,6 +1,6 @@
 import { useCallback } from "react";
 import { Link } from "react-router-dom";
-import { api, FEATURES, type Provider } from "../lib/api";
+import { api, FEATURES, featureDefault, type Provider } from "../lib/api";
 import { LANGUAGES, type RunSettings } from "../lib/runSettings";
 import { inputClass, labelClass } from "../lib/styles";
 import { cn } from "../lib/utils";
@@ -24,7 +24,7 @@ export function RunSettingsFields({
   sourceAuto?: boolean;
 }) {
   const { providerId, model, enableReview, reviewModel, sourceLang, targetLang, style, features } = value;
-  const off = FEATURES.filter(({ key }) => !features[key]).length;
+  const changed = FEATURES.filter((f) => features[f.key] !== featureDefault(f)).length;
   const provider = providers.find((p) => p.id === providerId) ?? null;
   const loadModels = useCallback(
     (refresh: boolean) =>
@@ -133,7 +133,7 @@ export function RunSettingsFields({
 
       <details className="group rounded-md border border-line px-3.5 py-2.5">
         <summary className="cursor-pointer text-sm font-medium marker:text-faint">
-          Features <span className="font-normal text-muted">· {off ? `${off} off` : "all on"}</span>
+          Features <span className="font-normal text-muted">· {changed ? `${changed} changed` : "defaults"}</span>
         </summary>
         <div className="mt-3 flex flex-col gap-3">
           {FEATURES.map(({ key, label, hint }) => (

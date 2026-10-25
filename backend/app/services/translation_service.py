@@ -143,6 +143,7 @@ async def translate_document(
     analysis: dict[str, Any] | None = None,
     max_concurrency: int = 1,
     bookmarks: list[dict] | None = None,
+    reflow: bool = False,
 ) -> AsyncGenerator[TranslationProgress, None]:
     """``bookmarks``: the open doubts of earlier runs (``unit``, ``block``, ``quote``, ``reason``)."""
     previous = previous or {}
@@ -519,7 +520,7 @@ async def translate_document(
 
     # Phase 4: output
     yield TranslationProgress(event_type="building_epub", message="Building translated file...")
-    doc.save(output_path, results)
+    doc.save(output_path, results, reflow=reflow)
     failed_units = [
         i for i in range(total) if results.get(i) is None or None in (results.get(i) or [])
     ]

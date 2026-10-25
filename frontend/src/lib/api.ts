@@ -335,7 +335,15 @@ export const FEATURES = [
     label: "Ask before large fixes",
     hint: "After an edit touching 50+ passages or notes; off: fix right away",
   },
+  {
+    key: "reflow_pdf",
+    label: "Continuous text (PDF)",
+    hint: "Text flows from page to page at its own size; the page count may change",
+    default: false,
+  },
 ] as const;
+/** a switch's value when the run does not say (on, unless the switch says otherwise) */
+export const featureDefault = (f: (typeof FEATURES)[number]) => ("default" in f ? f.default : true);
 export type Features = Record<(typeof FEATURES)[number]["key"], boolean>;
 
 /** A run's settings, as the server stores them (snake_case). */
