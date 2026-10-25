@@ -42,6 +42,7 @@ FONT_FILES = {
 }
 
 _PLACEHOLDER = re.compile(r"<(/?)(\d+)(/?)>")
+_CONTROL = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
 _FLAG_ITALIC, _FLAG_SERIF, _FLAG_MONO, _FLAG_BOLD = 2, 4, 8, 16
 HEADING_RATIO = 1.3
 
@@ -245,6 +246,9 @@ def _css_style(style: Style, factor: float = 1.0) -> str:
 
 def block_html(block: PdfBlock, translation: str, factor: float = 1.0) -> str:
     """Translation as HTML, placeholders turned back into styled spans."""
+    # a symbol-font bullet is extracted as NUL, which ends MuPDF's HTML: all that follows
+    # would be lost; other control characters have nothing to show either
+    translation = _CONTROL.sub(lambda m: "•" if m.group() == "\x00" else "", translation)
     out, stack, pos = [], [], 0
     for match in _PLACEHOLDER.finditer(translation):
         out.append(html.escape(translation[pos : match.start()]))

@@ -37,6 +37,7 @@ from app.services.pdf_service import (
 )
 
 FOOTER = re.compile(r"P\s*a\s*g\s*(?:i\s*n\s*a|e)\b", re.I)  # "Pagina", or "Page" left untranslated
+ENGLISH_FOOTER = re.compile(r"P\s*a\s*g\s*e\b", re.I)
 IMAGE_PAGE = 0.4  # share of a page covered by images that makes it an illustration
 FRONT_TEXT = 600  # characters of the first page that is not front matter
 
@@ -92,11 +93,14 @@ def reflow(src: pymupdf.Document) -> pymupdf.Document:
 
     page_rect = src[full[0]].rect
     footers = [b for i in full for b in pages[i] if _is_footer(b, heights[i])]
-    wordings = Counter(re.sub(r"\d+", "#", b.text) for b in footers)
+    # the most common wording, preferring a translated one: some or even most footers may
+    # have been left in English ("Page")
+    translated = [b for b in footers if not ENGLISH_FOOTER.search(b.text)] or footers
+    wordings = Counter(re.sub(r"\d+", "#", b.text) for b in translated)
     footer = next(
-        (b for b in footers if re.sub(r"\d+", "#", b.text) == wordings.most_common(1)[0][0]),
+        (b for b in translated if re.sub(r"\d+", "#", b.text) == wordings.most_common(1)[0][0]),
         None,
-    )  # the most common one: a few may have been left untranslated ("Page")
+    )
     rules = [
         d["rect"] for d in src[full[0]].get_drawings() if d["rect"].y0 > page_rect.height * 0.88
     ]

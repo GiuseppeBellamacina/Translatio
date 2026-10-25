@@ -244,3 +244,21 @@ def test_reflow_loses_no_text_and_keeps_the_footer_wording():
         (j, " ".join(p.get_text().split())) for j, p in enumerate(out) if "Pagina" in p.get_text()
     ]
     assert footers and all(t.endswith(f"Pagina | {j + 1}") for j, t in footers)
+
+
+def test_a_nul_bullet_does_not_cut_the_text():
+    from app.services.pdf_service import block_html
+
+    block = PdfBlock("", (0, 0, 1, 1), Style("sans", 12, False, False, 0), {}, [])
+    assert block_html(block, "\x00 Primo \x00 Secondo\x07") == "• Primo • Secondo"
+
+
+def test_reflow_prefers_the_translated_footer_wording():
+    from app.services.pdf_reflow import reflow
+
+    doc = pymupdf.open()
+    for page in range(6):  # most footers left in English, one translated
+        paragraphs = [f"Testo {page}-{k} " + "parola " * 40 + "fine." for k in range(6)]
+        _book_page(doc, paragraphs, page + 1, footer="Pagina | {n}" if page == 2 else "Page | {n}")
+    texts = [" ".join(p.get_text().split()) for p in reflow(doc)]
+    assert all(t.endswith(f"Pagina | {j + 1}") for j, t in enumerate(texts))
