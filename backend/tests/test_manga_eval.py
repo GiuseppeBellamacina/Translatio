@@ -117,3 +117,5 @@ async def test_drafts_keep_sound_effects(tmp_path, monkeypatch):
     assert rows == []  # drafted, not scored
     boxes = json.loads((tmp_path / "page-1.json").read_text())["boxes"]
     assert [b["kind"] for b in boxes] == ["dialogue", "dialogue", "caption", "sfx"]
+    check = pymupdf.Pixmap(str(tmp_path / "check" / "page-1.png"))
+    assert (check.width, check.height) == (WIDTH, HEIGHT)
