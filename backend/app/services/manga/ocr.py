@@ -9,6 +9,8 @@ import httpx
 from app.services.manga.detect import service
 
 ENGINES = ("manga-ocr", "easyocr", "doctr")
+LANGUAGE_CODES = {"english": "en", "japanese": "ja", "italian": "it", "french": "fr"}
+LANGUAGE_CODES |= {"german": "de", "spanish": "es", "portuguese": "pt", "korean": "ko"}
 # a word hyphenated at a line end: "PROMES-\nSO", or "RIPOR - TARLA" once the OCR joined lines
 _HYPHEN = re.compile(r"(\w)(?:-\n\s*| ?- +)(\w)")
 

@@ -3,9 +3,14 @@
 import asyncio
 import zipfile
 
+import pymupdf
+
+from app.agents.pipeline import TranslationPipeline
+from app.models.schemas import TranslationResult
 from app.services.documents import open_document
 from app.services.manga import document
 from scripts.make_sample_manga import sample_page
+from tests.conftest import ScriptedLLM, translate
 from tests.test_manga_regions import SAMPLE
 
 TEXTS = ["IT'S NOT HERE.", "WHERE DID YOU PUT THE LETTER?", "Meanwhile...", "BAM!"]
@@ -47,3 +52,20 @@ async def test_pages_are_read_once(tmp_path, monkeypatch):
 
     again = open_document(path)  # a resume: the cache answers
     assert [e async for e in again.prepare(reader, asyncio.Event())] == []
+    assert reads == [4] * 10 and again.text(0) == "\n".join(TEXTS[:3])
+
+
+async def test_a_chapter_is_translated_through_the_pipeline(tmp_path, monkeypatch):
+    path, _, reader = _chapter(tmp_path, monkeypatch)
+    llm = ScriptedLLM()
+    events = await translate(
+        path, TranslationPipeline(llm=llm, enable_review=False), tmp_path / "out.cbz", reader=reader
+    )
+    done = events[-1]
+    assert done.event_type == "job_complete" and done.data["failed_units"] == []
+    assert len(llm.calls_for(TranslationResult)) == 1  # the two short pages in one call
+
+    with zipfile.ZipFile(done.data["output_path"]) as out:
+        assert out.namelist() == ["p1.png", "p2.png"]
+        page = pymupdf.open(stream=out.read("p1.png"), filetype="png")
+    assert page[0].rect == pymupdf.Rect(0, 0, 800, 1200)  # same page size, text replaced

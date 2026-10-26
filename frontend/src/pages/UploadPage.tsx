@@ -27,9 +27,9 @@ export function UploadPage() {
 
   const handleFiles = useCallback(async (files: File[]) => {
     const problems = files
-      .filter((f) => !/\.(epub|pdf)$/i.test(f.name))
-      .map((f) => `${f.name}: only .epub and .pdf files are supported`);
-    const valid = files.filter((f) => /\.(epub|pdf)$/i.test(f.name));
+      .filter((f) => !/\.(epub|pdf|cbz|zip)$/i.test(f.name))
+      .map((f) => `${f.name}: only .epub, .pdf and .cbz/.zip (manga) files are supported`);
+    const valid = files.filter((f) => /\.(epub|pdf|cbz|zip)$/i.test(f.name));
     const books: Book[] = [];
     setUploading({ done: 0, total: valid.length });
     for (const file of valid) {
@@ -170,14 +170,14 @@ export function UploadPage() {
             <span className="text-sm text-muted">
               <span className="font-semibold text-ink">Click to upload</span> or drag and drop
             </span>
-            <span className="text-xs text-faint">.epub or .pdf · several files at once</span>
+            <span className="text-xs text-faint">.epub, .pdf or .cbz (manga) · several files at once</span>
           </>
         )}
         <input
           type="file"
           multiple
           className="sr-only"
-          accept=".epub,.pdf"
+          accept=".epub,.pdf,.cbz,.zip"
           onChange={(e) => {
             if (e.target.files?.length) handleFiles([...e.target.files]);
             e.target.value = ""; // the same files can be picked again
