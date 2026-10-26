@@ -43,8 +43,9 @@ def font_size(region: dict) -> float:
 
 def letter(page: pymupdf.Page, region: dict, text: str) -> None:
     """Write ``text`` for ``region`` on ``page``, fitted and centred in its room."""
-    if region["text"].isupper():
-        text = text.upper()  # the lettering's own case
+    letters = [c for c in region["text"] if c.isalpha()]
+    if letters and sum(c.isupper() for c in letters) > len(letters) / 2:
+        text = text.upper()  # all-caps lettering (a local OCR may read it in mixed case)
     rect = room(region)
     body = f'<p style="font-size:{font_size(region):.1f}px">{html.escape(text)}</p>'
     scratch = pymupdf.open()  # measure first: the unused height centres the text

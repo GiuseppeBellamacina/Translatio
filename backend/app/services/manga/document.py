@@ -92,6 +92,10 @@ class MangaDocument(Document):
         """The page with its lettering erased."""
         return self.cache / f"page-{index + 1}.png"
 
+    def unread(self) -> int:
+        """Pages not read yet: their text (and its cost) is known only after the OCR."""
+        return sum(not self._cached(i).exists() for i in range(len(self.pages)))
+
     def regions(self, index: int) -> list[dict]:
         """The page's text regions in reading order (empty until the page is read)."""
         cached = self._cached(index)

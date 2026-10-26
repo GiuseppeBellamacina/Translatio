@@ -14,7 +14,7 @@ Spy x Family ch. 1, the official Italian edition (74 pages, 800×1200). The page
 
 The 7 development pages (10, 14, 18, 21, 29, 48, 54) are used for tuning. The 6 held-out pages (13, 25, 32, 37, 44, 65) are only measured.
 
-The labels start from the detector's drafts and missed boxes were not added, so recall is not meaningful here. A check of the remaining 61 pages found no missed text.
+The labels start from the detector's drafts and missed boxes were not added, so recall is not meaningful here. About 15 pages were checked by eye overall, and no missed text was seen on them.
 
 ## Detection and order
 
