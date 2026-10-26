@@ -38,6 +38,7 @@ from app.services.chunker import make_chunker
 from app.services.cost_estimator import DEFAULT_MODELS, TokenProfile, estimate, profile_document
 from app.services.documents import open_document
 from app.services.html_processor import extract_visible_text
+from app.services.manga.document import MangaDocument, cache_dir
 from app.services.model_catalog import list_models, price_for
 from app.services.pricing import ModelPrice, PriceTable, get_prices
 
@@ -50,14 +51,14 @@ router = APIRouter()
 # === BOOKS ===
 
 
-SUPPORTED_SUFFIXES = {".epub", ".pdf"}
+SUPPORTED_SUFFIXES = {".epub", ".pdf", ".cbz", ".zip"}  # .cbz/.zip: manga pages
 
 
 @router.post("/upload", response_model=BookResponse)
 async def upload_book(file: UploadFile = File(...), db: AsyncSession = Depends(get_db)):
     suffix = Path(file.filename or "").suffix.lower()
     if suffix not in SUPPORTED_SUFFIXES:
-        raise HTTPException(400, "Only .epub and .pdf files are supported")
+        raise HTTPException(400, "Only .epub, .pdf and .cbz/.zip (manga) files are supported")
 
     # Unique name on disk: two uploads with the same filename must not overwrite each other
     upload_path = settings.uploads_dir / f"{uuid.uuid4().hex[:8]}_{Path(file.filename).name}"
@@ -120,6 +121,7 @@ async def delete_book(book_id: int, db: AsyncSession = Depends(get_db)):
     for path in files:
         if path.resolve().is_relative_to(settings.data_dir.resolve()):  # only our own files
             path.unlink(missing_ok=True)
+            shutil.rmtree(cache_dir(path), ignore_errors=True)  # manga: the pages read
     jobs.events.recent.pop(book_id, None)
     return {"status": "deleted"}
 
@@ -359,5 +361,7 @@ async def download_book(book_id: int, db: AsyncSession = Depends(get_db)):
     return FileResponse(
         path=str(path),
         filename=f"translated_{book.filename}",
-        media_type="application/pdf" if path.suffix == ".pdf" else "application/epub+zip",
+        media_type={".pdf": "application/pdf", ".cbz": MangaDocument.media_type}.get(
+            path.suffix, "application/epub+zip"
+        ),
     )
