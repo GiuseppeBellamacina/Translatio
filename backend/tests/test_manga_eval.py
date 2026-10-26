@@ -10,8 +10,10 @@ import pytest
 from app.core.config import settings
 from app.services.manga.detect import detect
 from app.services.manga.metrics import edit_distance, iou, match, rates, score_page
+from scripts import manga_eval
 from scripts.make_sample_manga import HEIGHT, REGIONS, WIDTH, sample_page
 from scripts.manga_eval import DETECTORS, evaluate
+from tests.test_manga_regions import SAMPLE
 
 
 def test_iou_and_match():
@@ -77,7 +79,7 @@ async def test_eval_scores_and_bootstraps(tmp_path):
     _, total = await evaluate(tmp_path, everything)
     assert rates(total)["sfx_included"] == 1 and rates(total)["precision"] == 0.75
 
-    rows, _ = await evaluate(tmp_path, everything, bootstrap=True)
+    rows, _ = await evaluate(tmp_path, everything, draft=everything)
     assert json.loads((tmp_path / "page-2.json").read_text())["boxes"] == truth
     assert [name for name, _ in rows] == ["page-10.png"]  # natural order, draft not scored
     rows, _ = await evaluate(tmp_path, everything)
@@ -103,3 +105,17 @@ def test_order_score():
     assert rates(score_page(truth, truth))["order"] == 1
     assert rates(score_page(truth[::-1], truth))["order"] == 0
     assert rates(score_page([truth[1], truth[0], truth[2]], truth))["order"] == 0.5
+
+
+async def test_drafts_keep_sound_effects(tmp_path, monkeypatch):
+    async def detected(image: bytes) -> list[dict]:
+        return SAMPLE
+
+    monkeypatch.setattr(manga_eval, "ml_detect", detected)
+    (tmp_path / "page-1.png").write_bytes(sample_page()[0])
+    rows, _ = await evaluate(tmp_path, DETECTORS["regions"], draft=manga_eval._all_regions)
+    assert rows == []  # drafted, not scored
+    boxes = json.loads((tmp_path / "page-1.json").read_text())["boxes"]
+    assert [b["kind"] for b in boxes] == ["dialogue", "dialogue", "caption", "sfx"]
+    check = pymupdf.Pixmap(str(tmp_path / "check" / "page-1.png"))
+    assert (check.width, check.height) == (WIDTH, HEIGHT)

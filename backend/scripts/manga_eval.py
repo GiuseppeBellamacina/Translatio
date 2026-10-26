@@ -1,12 +1,14 @@
 """Score a manga text detector (and its OCR) on pages with hand-checked ground truth.
 
-    docker compose -f docker-compose.yml -f docker-compose.dev.yml run --rm backend \
-        python scripts/manga_eval.py /data/manga-test/en/spy-x-family-1
+    docker compose -f docker-compose.yml -f docker-compose.dev.yml -f docker-compose.manga.yml \
+        run --rm backend python scripts/manga_eval.py /data/manga-test/en/spy-x-family-1
 
 Each page image (png, jpg, webp) has a ``<page>.json`` next to it:
 ``{"boxes": [{"box": [x0, y0, x1, y1], "kind": "dialogue|caption|sfx", "text": "..."}]}``
-in image pixels (app/services/manga/metrics.py). ``--bootstrap`` writes the detector's output
-as that file for the pages that have none, to correct by hand; those pages are not scored.
+in image pixels and reading order (app/services/manga/metrics.py). ``--bootstrap`` drafts that
+file for the pages that have none (every region, SFX labelled) and draws it in
+``check/<page>.png`` (numbered; blue dialogue, green captions, red SFX), to correct by hand;
+those pages are not scored.
 """
 
 import argparse
@@ -19,14 +21,17 @@ from collections import Counter
 from collections.abc import Awaitable, Callable
 from pathlib import Path
 
+import pymupdf
+
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from app.services.manga.detect import TEXT_LABELS  # noqa: E402
 from app.services.manga.detect import detect as ml_detect  # noqa: E402
 from app.services.manga.metrics import SFX, rates, score_page  # noqa: E402
-from app.services.manga.regions import text_regions  # noqa: E402
+from app.services.manga.regions import regions, text_regions  # noqa: E402
 
 IMAGES = {".png", ".jpg", ".jpeg", ".webp"}
 Detector = Callable[[Path], Awaitable[list[dict]]]
+COLOURS = {"dialogue": (0, 0.4, 1), "caption": (0, 0.6, 0), SFX: (0.9, 0, 0)}
 
 
 async def _truth(image: Path) -> list[dict]:
@@ -46,7 +51,29 @@ async def _regions(image: Path) -> list[dict]:
     return text_regions(detected, right_to_left="ja" in image.parts)
 
 
+async def _all_regions(image: Path) -> list[dict]:
+    """Every region in reading order, SFX labelled: the drafts of `--bootstrap`."""
+    return regions(await ml_detect(image.read_bytes()), right_to_left="ja" in image.parts)
+
+
 DETECTORS: dict[str, Detector] = {"truth": _truth, "ml": _ml, "regions": _regions}
+
+
+def check_image(image: Path, boxes: list[dict]) -> Path:
+    """The page with its boxes numbered in reading order and coloured by kind, in ``check/``."""
+    size = pymupdf.Pixmap(str(image))
+    doc = pymupdf.open()
+    page = doc.new_page(width=size.width, height=size.height)
+    page.insert_image(page.rect, filename=str(image))
+    for n, b in enumerate(boxes, 1):
+        colour = COLOURS.get(b["kind"], (0.5, 0, 0.5))
+        page.draw_rect(b["box"], color=colour, width=3)
+        corner = (b["box"][0], b["box"][1] - 5 if b["box"][1] > 30 else b["box"][3] + 25)
+        page.insert_text(corner, str(n), fontsize=26, fontname="hebo", color=colour)
+    out = image.parent / "check" / f"{image.stem}.png"
+    out.parent.mkdir(exist_ok=True)
+    page.get_pixmap(dpi=72).save(out)
+    return out
 
 
 def _natural(path: Path) -> list:
@@ -58,24 +85,29 @@ def _pages(folder: Path) -> list[Path]:
 
 
 async def evaluate(
-    folder: Path, detect: Detector, bootstrap: bool = False
+    folder: Path, detect: Detector, draft: Detector | None = None
 ) -> tuple[list[tuple[str, Counter]], Counter]:
-    """Counts per scored page (with the detector's milliseconds) and their total."""
+    """Counts per scored page (with the detector's milliseconds) and their total.
+
+    Pages without ground truth are not scored; with ``draft`` they get one to correct by hand.
+    """
     rows, total = [], Counter()
     for image in _pages(folder):
         truth = image.with_suffix(".json")
-        if not truth.exists() and not bootstrap:
+        if not truth.exists():
+            if draft:
+                boxes = [
+                    {"box": r["box"], "kind": r["kind"], "text": r.get("text", "")}
+                    for r in await draft(image)
+                ]
+                truth.write_text(
+                    json.dumps({"boxes": boxes}, indent=2, ensure_ascii=False), "utf-8"
+                )
+                check_image(image, boxes)
             continue
         start = time.perf_counter()
         pred = await detect(image)
         ms = round((time.perf_counter() - start) * 1000)
-        if not truth.exists():
-            draft = [
-                {"box": p["box"], "kind": p.get("kind", "dialogue"), "text": p.get("text", "")}
-                for p in pred
-            ]
-            truth.write_text(json.dumps({"boxes": draft}, indent=2, ensure_ascii=False), "utf-8")
-            continue
         counts = score_page(pred, json.loads(truth.read_text(encoding="utf-8"))["boxes"])
         counts["ms"] = ms
         rows.append((image.name, counts))
@@ -100,9 +132,13 @@ def main() -> None:
     )
     parser.add_argument("folder", type=Path)
     parser.add_argument("--detector", choices=DETECTORS, default="regions")
-    parser.add_argument("--bootstrap", action="store_true", help="write missing ground truth")
+    parser.add_argument(
+        "--bootstrap", action="store_true", help="draft missing ground truth, SFX included"
+    )
     args = parser.parse_args()
-    rows, total = asyncio.run(evaluate(args.folder, DETECTORS[args.detector], args.bootstrap))
+    rows, total = asyncio.run(
+        evaluate(args.folder, DETECTORS[args.detector], _all_regions if args.bootstrap else None)
+    )
     print(
         f"{'page':<28} {'pred':>5} {'truth':>5} {'hits':>5} {'prec':>6} {'recall':>6} "
         f"{'sfx':>6} {'cer':>6} {'order':>6} {'ms/page':>7}"
