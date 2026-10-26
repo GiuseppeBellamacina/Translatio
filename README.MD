@@ -111,7 +111,7 @@ On the translate page of a manga, pick the **OCR model**:
 - **a vision model** on the same provider (accurate, about $0.001 a page on a cheap model);
 - **empty**, for the free local OCR (fast, but more reading errors).
 
-Measured results are in [docs/manga-eval.md](docs/manga-eval.md); the design is in [docs/manga-plan.md](docs/manga-plan.md).
+Measured results are in [docs/manga-eval.md](docs/manga-eval.md), the design is in [docs/manga-plan.md](docs/manga-plan.md) and what is left in [todo.md](todo.md).
 
 ## Usage
 
