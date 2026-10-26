@@ -87,7 +87,7 @@ Monorepo: `backend/` (FastAPI + LangChain/LangGraph + async SQLAlchemy/aiosqlite
     - text in a bubble is `dialogue`, and its bubble box is kept;
     - free text is a `caption`; the detector does not pick up hand-drawn sound effects (checked on Spy x Family ch. 1), and lettered ones ("DING DONG") need OCR to be told apart (`sfx` regions are never translated);
     - a text box mostly made of other text boxes inside it is a merged detection and is dropped;
-    - the order is rows by vertical overlap (of the bubble, when there is one), right to left: published manga keep that layout in every language; `right_to_left=False` for western comics.
+    - the order is panel by panel (`panels.py`: a recursive cut along white gutters, horizontal first, then vertical right to left, with bubbles and text painted out; dark pages and slanted gutters stay one panel), then rows by vertical overlap inside a panel (of the bubble, when there is one), right to left: published manga keep that layout in every language; `right_to_left=False` for western comics. Order score on 13 hand-labelled Spy x Family pages: 0.90 → 0.94 (dev) and 0.91 (held-out); the rest is order inside a panel.
   - `manga_eval.py --detector regions` (the default) scores it (`--ltr` for western comics).
   - The backend reaches it through `manga_ml_url` (`TRANSLATIO_MANGA_ML_URL`, empty = manga mode unavailable) with `app/services/manga/detect.py`; tests use `httpx.MockTransport`.
 
