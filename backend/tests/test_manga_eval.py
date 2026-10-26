@@ -107,7 +107,7 @@ def test_order_score():
     assert rates(score_page([truth[1], truth[0], truth[2]], truth))["order"] == 0.5
 
 
-async def test_drafts_keep_sound_effects(tmp_path, monkeypatch):
+async def test_drafts_list_every_region(tmp_path, monkeypatch):
     async def detected(image: bytes) -> list[dict]:
         return SAMPLE
 
@@ -116,6 +116,6 @@ async def test_drafts_keep_sound_effects(tmp_path, monkeypatch):
     rows, _ = await evaluate(tmp_path, DETECTORS["regions"], draft=manga_eval._all_regions)
     assert rows == []  # drafted, not scored
     boxes = json.loads((tmp_path / "page-1.json").read_text())["boxes"]
-    assert [b["kind"] for b in boxes] == ["dialogue", "dialogue", "caption", "sfx"]
+    assert [b["kind"] for b in boxes] == ["dialogue", "dialogue", "caption", "caption"]
     check = pymupdf.Pixmap(str(tmp_path / "check" / "page-1.png"))
     assert (check.width, check.height) == (WIDTH, HEIGHT)

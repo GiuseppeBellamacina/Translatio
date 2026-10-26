@@ -1,17 +1,12 @@
 """Text regions of a manga page from the detector's boxes (app/services/manga/detect.py).
 
 A region is ``{"box", "kind": dialogue|caption|sfx, "bubble": box | None, "score"}``:
-text in a bubble is dialogue (its bubble is kept for typesetting), free text is a caption,
-unless it is much bigger than the page's bubble text: then it is a sound effect, left alone.
+text in a bubble is dialogue (its bubble is kept for typesetting), free text is a caption.
+The detector does not pick up hand-drawn sound effects (checked on a real chapter); lettered
+ones ("DING DONG") look like captions and need OCR to be told apart.
 """
 
-from statistics import median
-
 from app.services.manga.metrics import SFX
-
-# shortcut: compares box short sides, so a tall multi-line caption can pass for a sound effect;
-# switch to glyph size (box area / OCR characters) once OCR is in.
-SFX_SCALE = 1.2
 
 
 def _inside(inner: list[float], outer: list[float]) -> float:
@@ -22,8 +17,22 @@ def _inside(inner: list[float], outer: list[float]) -> float:
     return w * h / area if w > 0 and h > 0 and area > 0 else 0.0
 
 
-def _short(box: list[float]) -> float:
-    return min(box[2] - box[0], box[3] - box[1])
+def _area(box: list[float]) -> float:
+    return (box[2] - box[0]) * (box[3] - box[1])
+
+
+def _merged(texts: list[dict]) -> set[int]:
+    """Text boxes mostly made of other text boxes inside them: the detector merged those."""
+    dropped: set[int] = set()  # ids: duplicates compare equal
+    for t in sorted(texts, key=lambda t: _area(t["box"]), reverse=True):
+        inside = [
+            o["box"]
+            for o in texts
+            if o is not t and id(o) not in dropped and _inside(o["box"], t["box"]) >= 0.8
+        ]
+        if sum(map(_area, inside)) >= 0.5 * _area(t["box"]):
+            dropped.add(id(t))
+    return dropped
 
 
 def reading_order(found: list[dict], right_to_left: bool) -> list[dict]:
@@ -50,21 +59,16 @@ def reading_order(found: list[dict], right_to_left: bool) -> list[dict]:
 
 def regions(detected: list[dict], right_to_left: bool = True) -> list[dict]:
     bubbles = [d["box"] for d in detected if d["label"] == "bubble"]
-    in_bubbles = [_short(d["box"]) for d in detected if d["label"] == "text_bubble"]
-    usual = median(in_bubbles) if in_bubbles else None  # no bubble text: nothing to compare
+    texts = [d for d in detected if d["label"] != "bubble"]
+    merged = _merged(texts)
     found = []
-    for d in detected:
-        if d["label"] == "bubble":
+    for d in texts:
+        if id(d) in merged:
             continue
         holder = max(bubbles, key=lambda b: _inside(d["box"], b), default=None)
         if holder is not None and _inside(d["box"], holder) < 0.5:
             holder = None
-        if d["label"] == "text_bubble":
-            kind = "dialogue"
-        elif usual and _short(d["box"]) > SFX_SCALE * usual:
-            kind = SFX
-        else:
-            kind = "caption"
+        kind = "dialogue" if d["label"] == "text_bubble" else "caption"
         found.append({"box": d["box"], "kind": kind, "bubble": holder, "score": d["score"]})
     return reading_order(found, right_to_left)
 

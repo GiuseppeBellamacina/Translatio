@@ -25,20 +25,18 @@ def test_bubbles_and_kinds():
         "score": 0.804,
     }
     # manga order by default: the right bubble first, although its text starts lower
-    assert [r["box"] for r in text_regions(SAMPLE)] == [s["box"] for s in SAMPLE[2:4] + SAMPLE[5:]]
+    order = [r["box"] for r in text_regions(SAMPLE)]
+    assert order == [s["box"] for s in SAMPLE[2:4] + [SAMPLE[5], SAMPLE[4]]]
     # a text box mostly outside every bubble has none
     loose = [SAMPLE[0], {"box": [300, 200, 500, 300], "label": "text_bubble", "score": 0.5}]
     assert regions(loose)[0]["bubble"] is None
 
 
-def test_sound_effects_are_left_alone():
-    kinds = [r["kind"] for r in regions(SAMPLE)]
-    assert kinds.count("sfx") == 1 and kinds.count("caption") == 1
-    kept = text_regions(SAMPLE)
-    assert [r["box"] for r in kept if r["kind"] == "caption"] == [SAMPLE[5]["box"]]
-    assert all(r["kind"] != "sfx" for r in kept)
-    # without bubble text on the page there is no scale to compare with: free text is kept
-    assert [r["kind"] for r in regions(SAMPLE[4:])] == ["caption", "caption"]
+def test_free_text_is_a_caption():
+    # sizes do not tell sound effects from narration (real pages: big captions, small SFX);
+    # the synthetic "BAM!" is lettered like text, so it stays until OCR can recognise it
+    assert [r["kind"] for r in regions(SAMPLE)] == ["dialogue", "dialogue", "caption", "caption"]
+    assert text_regions([{**SAMPLE[4], "label": "text_bubble"}])[0]["kind"] == "dialogue"
 
 
 def test_reading_order():
@@ -47,7 +45,22 @@ def test_reading_order():
 
     # two panels side by side (one taller), then a wide one below
     page = [box(0, 300, 300, 360), box(400, 10, 700, 80), box(20, 20, 300, 100)]
-    page += [box(410, 120, 700, 200), box(450, 140, 690, 210)]
+    page += [box(410, 120, 700, 200), box(100, 140, 380, 210)]
     order = lambda rtl: [r["box"][:2] for r in regions(page, rtl)]  # noqa: E731
-    assert order(False) == [[20, 20], [400, 10], [410, 120], [450, 140], [0, 300]]
-    assert order(True) == [[400, 10], [20, 20], [450, 140], [410, 120], [0, 300]]
+    assert order(False) == [[20, 20], [400, 10], [100, 140], [410, 120], [0, 300]]
+    assert order(True) == [[400, 10], [20, 20], [410, 120], [100, 140], [0, 300]]
+
+
+def test_merged_boxes_are_dropped():
+    def text(*box):
+        return {"box": list(box), "label": "text_free", "score": 1}
+
+    # a box around two captions (Spy x Family p. 21), an exact duplicate, a box with a speck
+    page = [text(95, 45, 285, 285), text(100, 50, 280, 145), text(95, 180, 265, 280)]
+    page += [text(500, 50, 600, 100), text(500, 50, 600, 100)]
+    page += [text(500, 500, 700, 700), text(600, 600, 610, 610)]
+    kept = sorted(r["box"] for r in regions(page))
+    assert kept == sorted(
+        [[100, 50, 280, 145], [95, 180, 265, 280], [500, 50, 600, 100]]
+        + [[500, 500, 700, 700], [600, 600, 610, 610]]
+    )

@@ -85,7 +85,8 @@ Monorepo: `backend/` (FastAPI + LangChain/LangGraph + async SQLAlchemy/aiosqlite
   - Weights are cached in the `ml_models` volume.
   - `regions.py` turns the boxes into regions:
     - text in a bubble is `dialogue`, and its bubble box is kept;
-    - free text is a `caption`, or `sfx` when its short side exceeds `SFX_SCALE` times the page's median bubble text (a shortcut until OCR gives a glyph size); SFX are never translated;
+    - free text is a `caption`; the detector does not pick up hand-drawn sound effects (checked on Spy x Family ch. 1), and lettered ones ("DING DONG") need OCR to be told apart (`sfx` regions are never translated);
+    - a text box mostly made of other text boxes inside it is a merged detection and is dropped;
     - the order is rows by vertical overlap (of the bubble, when there is one), right to left: published manga keep that layout in every language; `right_to_left=False` for western comics.
   - `manga_eval.py --detector regions` (the default) scores it (`--ltr` for western comics).
   - The backend reaches it through `manga_ml_url` (`TRANSLATIO_MANGA_ML_URL`, empty = manga mode unavailable) with `app/services/manga/detect.py`; tests use `httpx.MockTransport`.
