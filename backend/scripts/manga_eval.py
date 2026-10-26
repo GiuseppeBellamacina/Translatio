@@ -27,6 +27,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from app.services.manga.detect import TEXT_LABELS  # noqa: E402
 from app.services.manga.detect import detect as ml_detect  # noqa: E402
 from app.services.manga.metrics import SFX, rates, score_page  # noqa: E402
+from app.services.manga.ocr import ENGINES, read  # noqa: E402
 from app.services.manga.panels import panels  # noqa: E402
 from app.services.manga.regions import regions, text_regions  # noqa: E402
 
@@ -144,11 +145,22 @@ def main() -> None:
         "--bootstrap", action="store_true", help="draft missing ground truth, SFX included"
     )
     parser.add_argument("--ltr", action="store_true", help="read left to right (western comics)")
+    parser.add_argument("--ocr", choices=ENGINES, help="read the regions, to score the CER")
+    parser.add_argument("--lang", default="en", help="source language code for the OCR")
     args = parser.parse_args()
     global right_to_left
     right_to_left = not args.ltr
+    detect = DETECTORS[args.detector]
+
+    async def with_text(image: Path) -> list[dict]:
+        found = await detect(image)
+        texts = await read(image.read_bytes(), [r["box"] for r in found], args.ocr, args.lang)
+        return [{**r, "text": t} for r, t in zip(found, texts, strict=True)]
+
     rows, total = asyncio.run(
-        evaluate(args.folder, DETECTORS[args.detector], _all_regions if args.bootstrap else None)
+        evaluate(
+            args.folder, with_text if args.ocr else detect, _all_regions if args.bootstrap else None
+        )
     )
     print(
         f"{'page':<28} {'pred':>5} {'truth':>5} {'hits':>5} {'prec':>6} {'recall':>6} "

@@ -5,6 +5,7 @@ in page pixels, listed in reading order. Sound effects in the ground truth must 
 detected; the rest must, in that order.
 """
 
+import unicodedata
 from collections import Counter
 from collections.abc import Sequence
 
@@ -48,7 +49,8 @@ def edit_distance(a: str, b: str) -> int:
 
 
 def _clean(text: str) -> str:
-    return " ".join(text.split())
+    """Case and apostrophe style do not matter for translation."""
+    return " ".join(unicodedata.normalize("NFKC", text).replace("’", "'").casefold().split())
 
 
 def score_page(pred: list[dict], truth: list[dict]) -> Counter:

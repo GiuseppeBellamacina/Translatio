@@ -1,5 +1,6 @@
 """Manga evaluation harness: metrics, sample pages, eval script."""
 
+import base64
 import json
 from collections import Counter
 
@@ -10,6 +11,7 @@ import pytest
 from app.core.config import settings
 from app.services.manga.detect import detect
 from app.services.manga.metrics import edit_distance, iou, match, rates, score_page
+from app.services.manga.ocr import clean, read
 from scripts import manga_eval
 from scripts.make_sample_manga import HEIGHT, REGIONS, WIDTH, sample_page
 from scripts.manga_eval import DETECTORS, evaluate
@@ -119,3 +121,25 @@ async def test_drafts_list_every_region(tmp_path, monkeypatch):
     assert [b["kind"] for b in boxes] == ["dialogue", "dialogue", "caption", "caption"]
     check = pymupdf.Pixmap(str(tmp_path / "check" / "page-1.png"))
     assert (check.width, check.height) == (WIDTH, HEIGHT)
+
+
+def test_ocr_text_is_cleaned():
+    assert clean("PROMES-\nSO") == "PROMESSO"
+    assert clean("RIPOR - TARLA IN\nTEMPO") == "RIPORTARLA IN TEMPO"
+    assert clean("Forger-sama, ＢＡＭ！") == "Forger-sama, BAM!"
+    # case and apostrophe style do not count as OCR errors
+    pred = [{"box": [0, 0, 10, 10], "text": "Perche’ sei"}]
+    truth = [{"box": [0, 0, 10, 10], "kind": "dialogue", "text": "PERCHE' SEI"}]
+    assert rates(score_page(pred, truth))["cer"] == 0
+
+
+async def test_ocr_client(monkeypatch):
+    def reply(request: httpx.Request) -> httpx.Response:
+        body = json.loads(request.content)
+        assert request.url.params["engine"] == "easyocr" and request.url.params["lang"] == "it"
+        assert base64.b64decode(body["image"]) == b"png" and body["boxes"] == [[1, 2, 3, 4]]
+        return httpx.Response(200, json={"texts": ["CIAO-\nNE"]})
+
+    monkeypatch.setattr(settings, "manga_ml_url", "http://ml:8100")
+    texts = await read(b"png", [[1, 2, 3, 4]], "easyocr", "it", httpx.MockTransport(reply))
+    assert texts == ["CIAONE"]
