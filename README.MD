@@ -103,7 +103,7 @@ It needs an NVIDIA GPU (Docker with GPU support) for the detection, OCR and inpa
 docker compose -f docker-compose.yml -f docker-compose.dev.yml -f docker-compose.manga.yml up --build
 ```
 
-The models (about 1 GB) are downloaded on first use into the `ml_models` volume.
+The models are downloaded on first use into the `ml_models` volume (about 1.5 GB with every OCR engine).
 
 On the translate page of a manga, pick the **OCR model**:
 - **a vision model** on the same provider (accurate, about $0.001 a page on a cheap model);
