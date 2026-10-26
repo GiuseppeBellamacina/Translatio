@@ -23,6 +23,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from app.services.manga.detect import TEXT_LABELS  # noqa: E402
 from app.services.manga.detect import detect as ml_detect  # noqa: E402
 from app.services.manga.metrics import SFX, rates, score_page  # noqa: E402
+from app.services.manga.regions import text_regions  # noqa: E402
 
 IMAGES = {".png", ".jpg", ".jpeg", ".webp"}
 Detector = Callable[[Path], Awaitable[list[dict]]]
@@ -39,7 +40,13 @@ async def _ml(image: Path) -> list[dict]:
     return [r for r in await ml_detect(image.read_bytes()) if r["label"] in TEXT_LABELS]
 
 
-DETECTORS: dict[str, Detector] = {"truth": _truth, "ml": _ml}
+async def _regions(image: Path) -> list[dict]:
+    """Text regions in reading order without SFX (right to left for pages under a `ja` folder)."""
+    detected = await ml_detect(image.read_bytes())
+    return text_regions(detected, right_to_left="ja" in image.parts)
+
+
+DETECTORS: dict[str, Detector] = {"truth": _truth, "ml": _ml, "regions": _regions}
 
 
 def _natural(path: Path) -> list:
@@ -92,7 +99,7 @@ def main() -> None:
         description="Score a manga text detector on pages with ground truth."
     )
     parser.add_argument("folder", type=Path)
-    parser.add_argument("--detector", choices=DETECTORS, default="truth")
+    parser.add_argument("--detector", choices=DETECTORS, default="regions")
     parser.add_argument("--bootstrap", action="store_true", help="write missing ground truth")
     args = parser.parse_args()
     rows, total = asyncio.run(evaluate(args.folder, DETECTORS[args.detector], args.bootstrap))
