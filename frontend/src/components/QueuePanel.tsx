@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import { Dialog, DialogPanel, DialogTitle } from "@headlessui/react";
 import { Loader2, Pause, Play, Plus, X } from "lucide-react";
 import { api, QUEUE_PILL, type Book, type QueueItem, type QueueState } from "../lib/api";
+import { bookTitle } from "../lib/utils";
 import { Checkbox, Select } from "./controls";
 import { SortableItem, SortableList } from "./SortableList";
 
@@ -10,7 +11,7 @@ import { SortableItem, SortableList } from "./SortableList";
 const PARALLEL = ["1", "2", "3", "4", "6", "8"] as const;
 import { Button, Card, Heading, StatusPill } from "./ui";
 
-const bookName = (filename: string) => filename.replace(/\.(epub|pdf)$/i, "");
+const bookName = bookTitle;
 
 /** Items by queue (batch), in order; batches are contiguous in the global order. */
 function batches(items: QueueItem[]): QueueItem[][] {

@@ -4,6 +4,7 @@ import { BookOpen, Download, Eye, ListOrdered, Loader2, Trash2 } from "lucide-re
 import { api, type Book, type QueueState } from "../lib/api";
 import { languageName } from "../lib/runSettings";
 import { buttonClass } from "../lib/styles";
+import { bookKind, bookTitle } from "../lib/utils";
 import { Checkbox } from "../components/controls";
 import { QueueDialog } from "../components/QueueDialog";
 import { QueuePanel } from "../components/QueuePanel";
@@ -34,7 +35,7 @@ export function HistoryPage() {
   );
   const pending = new Set(queue?.items.filter((i) => i.status === "pending").map((i) => i.book_id));
   const remove = async (book: Book) => {
-    const name = book.filename.replace(/\.(epub|pdf)$/i, "");
+    const name = bookTitle(book.filename);
     const note = book.status === "completed" ? " and its translation" : "";
     if (!window.confirm(`Delete "${name}"${note}? Progress and glossary are removed too.`)) return;
     try {
@@ -81,7 +82,6 @@ export function HistoryPage() {
       ) : (
         <ul className="m-0 flex list-none flex-col gap-3 p-0">
           {books.map((book) => {
-            const isPdf = book.filename.toLowerCase().endsWith(".pdf");
             const pct = book.total_chapters
               ? Math.round((book.translated_chapters / book.total_chapters) * 100)
               : 0;
@@ -106,10 +106,10 @@ export function HistoryPage() {
                       className="block truncate font-serif text-xl font-medium text-ink no-underline hover:underline"
                     >
                       {order >= 0 && <span className="mr-2 text-accent">{order + 1}.</span>}
-                      {book.filename.replace(/\.(epub|pdf)$/i, "")}
+                      {bookTitle(book.filename)}
                     </Link>
                     <div className="mt-1 text-[13px] text-muted">
-                      {isPdf ? "PDF" : "EPUB"} · {book.total_chapters} {isPdf ? "pages" : "chapters"} ·{" "}
+                      {bookKind(book)} ·{" "}
                       <span className="capitalize">{languageName(book.source_language, "unknown")}</span> →{" "}
                       <span className="capitalize">{languageName(book.target_language, "italian")}</span> ·{" "}
                       {new Date(book.created_at).toLocaleDateString()}
