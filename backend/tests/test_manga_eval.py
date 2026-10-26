@@ -2,7 +2,10 @@
 
 from collections import Counter
 
+import pymupdf
+
 from app.services.manga.metrics import edit_distance, iou, match, rates, score_page
+from scripts.make_sample_manga import HEIGHT, REGIONS, WIDTH, sample_page
 
 
 def test_iou_and_match():
@@ -40,3 +43,13 @@ def test_score_page_counts_sfx_and_cer():
     total = counts + score_page([], truth[:1])
     assert total["truth"] == 3
     assert rates(Counter(pred=1, hits=1, truth=1))["sfx_included"] is None
+
+
+def test_sample_page_has_ground_truth():
+    png, truth = sample_page()
+    pix = pymupdf.Pixmap(png)
+    assert (pix.width, pix.height) == (WIDTH, HEIGHT)
+    assert [r["kind"] for r in truth] == ["dialogue", "dialogue", "caption", "sfx"]
+    for region, (_, area, text, *_) in zip(truth, REGIONS, strict=True):
+        assert pymupdf.Rect(area).contains(pymupdf.Rect(region["box"]))
+        assert region["text"] == " ".join(text.split())
