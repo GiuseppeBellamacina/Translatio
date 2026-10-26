@@ -15,6 +15,12 @@ LANGUAGE_CODES |= {"german": "de", "spanish": "es", "portuguese": "pt", "korean"
 _HYPHEN = re.compile(r"(\w)(?:-\n\s*| ?- +)(\w)")
 
 
+def is_sfx(text: str) -> bool:
+    """A sound effect, as the vision OCR marks them: the whole text in square brackets."""
+    text = text.strip()
+    return len(text) > 2 and text.startswith("[") and text.endswith("]")
+
+
 def clean(text: str) -> str:
     """One line: hyphenated words joined, fullwidth forms folded ("ＢＡＭ！" → "BAM!")."""
     return " ".join(_HYPHEN.sub(r"\1\2", unicodedata.normalize("NFKC", text)).split())

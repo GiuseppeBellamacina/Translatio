@@ -20,6 +20,7 @@ from app.services.chunker import SmartChunker, TextBlock
 from app.services.documents import Document, Translations, Unit
 from app.services.manga.detect import detect
 from app.services.manga.erase import erase
+from app.services.manga.ocr import is_sfx
 from app.services.manga.panels import panels
 from app.services.manga.regions import text_regions
 from app.services.manga.typeset import letter
@@ -139,7 +140,7 @@ class MangaDocument(Document):
                 regions = [
                     {"box": r["box"], "kind": r["kind"], "bubble": r["bubble"], "text": t}
                     for r, t in zip(found, texts, strict=True)
-                    if t.strip()
+                    if t.strip() and not is_sfx(t)  # sound effects stay as drawn
                 ]
                 _write(self._cached(index), json.dumps(regions, ensure_ascii=False).encode())
             regions = self.regions(index)

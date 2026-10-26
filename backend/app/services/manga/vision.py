@@ -24,7 +24,9 @@ PROMPT = ChatPromptTemplate.from_messages(
             "You are an OCR engine for comics. Transcribe the lettering of each numbered box "
             "exactly as written: same language, words and punctuation; never translate or "
             "correct. Join the lines of a box into one line and rejoin a word hyphenated at a "
-            "line end. A box without text gives an empty string. The red numbers are not text.",
+            "line end. A box without text gives an empty string. Write a sound effect "
+            "(onomatopoeia such as BAM, SLAM, TOSS, DING DONG) inside square brackets: [BAM]. "
+            "The red numbers are not text.",
         ),
         (
             "human",

@@ -13,7 +13,7 @@ from app.core.fake_llm import FakeChatModel
 from app.models.schemas import Transcription
 from app.services.manga.detect import detect
 from app.services.manga.metrics import edit_distance, iou, match, rates, score_page
-from app.services.manga.ocr import clean, read
+from app.services.manga.ocr import clean, is_sfx, read
 from app.services.manga.vision import SHEET_HEIGHT
 from app.services.manga.vision import read as vision_read
 from app.services.manga.vision import sheets
@@ -189,3 +189,8 @@ async def test_vision_read_falls_back_to_single_boxes(monkeypatch):
         texts=["A"] if "Boxes: 1." in text else ["A"] * 5
     )
     assert await vision_read(png, [t["box"] for t in truth], llm) == ["A"] * 4
+
+
+def test_sound_effects_in_brackets():
+    assert is_sfx("[SLINK]") and is_sfx(" [DING DONG] ")
+    assert not is_sfx("EHI!") and not is_sfx("[") and not is_sfx("[nota] e altro")
