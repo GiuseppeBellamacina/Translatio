@@ -1,13 +1,14 @@
 """Books: upload, list, delete, detail, preview, progress, estimate, download."""
 
 import asyncio
+import mimetypes
 import shutil
 import time
 import uuid
 from dataclasses import asdict
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, HTTPException, Response, UploadFile
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -79,6 +80,7 @@ async def upload_book(file: UploadFile = File(...), db: AsyncSession = Depends(g
         target_language="italian",
         status=BookStatus.uploaded,
         total_chapters=len(units),
+        manga=isinstance(doc, MangaDocument),
     )
     db.add(book)
     await db.commit()
@@ -181,7 +183,36 @@ async def get_preview(book_id: int, chapter_index: int = 0, db: AsyncSession = D
         "original_text": doc.text(chapter_index),
         "translated_text": translated_text,
         "original_html": doc.render(chapter_index, None) or "",
+        "images": isinstance(doc, MangaDocument),  # a manga page: see page_image
     }
+
+
+@router.get("/books/{book_id}/pages/{index}.png")
+async def page_image(
+    book_id: int, index: int, translated: bool = False, db: AsyncSession = Depends(get_db)
+):
+    """A manga page as an image: the original, or lettered with the translations so far."""
+    book = await db.get(Book, book_id)
+    if not book:
+        raise HTTPException(404, "Book not found")
+    doc = open_document(book.original_path)
+    if not isinstance(doc, MangaDocument):
+        raise HTTPException(400, "Only manga books have page images")
+    if not 0 <= index < len(doc.units):
+        raise HTTPException(400, "Page index out of range")
+    image = None
+    if translated:
+        chapter = (
+            await db.execute(
+                select(Chapter).where(Chapter.book_id == book_id, Chapter.order_index == index)
+            )
+        ).scalar_one_or_none()
+        if chapter and chapter.block_translations:
+            image = await asyncio.to_thread(doc.page, index, chapter.block_translations)
+    if image:
+        return Response(image, media_type="image/png")
+    kind = mimetypes.guess_type(doc.pages[index])[0] or "image/png"
+    return Response(doc.image(index), media_type=kind)
 
 
 @router.get("/books/{book_id}/bookmarks")

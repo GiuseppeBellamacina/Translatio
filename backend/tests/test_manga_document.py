@@ -118,3 +118,19 @@ async def test_a_pdf_of_page_images_is_read_like_a_manga(tmp_path, monkeypatch):
     )
     out = pymupdf.open(events[-1].data["output_path"])
     assert [p.rect for p in out] == [pymupdf.Rect(0, 0, 400, 600)] * 2
+
+
+def test_manga_upload_preview_and_page_images(tmp_path, monkeypatch, db):
+    from fastapi.testclient import TestClient
+
+    from app.main import app
+
+    path, _, _ = _chapter(tmp_path, monkeypatch)
+    with TestClient(app) as client, open(path, "rb") as f:
+        book = client.post("/api/upload", files={"file": ("ch1.cbz", f)}).json()
+        assert book["manga"] is True and book["total_chapters"] == 2
+        assert client.get(f"/api/books/{book['id']}/preview").json()["images"] is True
+        page = client.get(f"/api/books/{book['id']}/pages/0.png?translated=true")
+        assert page.status_code == 200 and page.headers["content-type"] == "image/png"
+        assert pymupdf.Pixmap(page.content).width == 800  # nothing translated: the original
+        assert client.get(f"/api/books/{book['id']}/pages/9.png").status_code == 400

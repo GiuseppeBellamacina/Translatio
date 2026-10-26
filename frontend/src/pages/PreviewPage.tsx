@@ -77,20 +77,41 @@ export function PreviewPage() {
         </div>
       </div>
 
-      <div className="grid min-h-0 flex-1 grid-cols-1 overflow-hidden rounded-md border border-line bg-surface md:grid-cols-2">
-        <section className="overflow-auto border-b border-line p-6 md:border-b-0 md:border-r">
-          <div className="mb-3 text-[11px] uppercase tracking-[0.14em] text-faint">Original</div>
-          <div className="whitespace-pre-wrap font-serif text-[17px] leading-relaxed text-muted">
-            {preview.original_text || <span className="italic text-faint">No text on this page.</span>}
-          </div>
-        </section>
-        <section className="overflow-auto p-6">
-          <div className="mb-3 text-[11px] uppercase tracking-[0.14em] text-accent">Translation</div>
-          <div className="whitespace-pre-wrap font-serif text-[17px] leading-relaxed text-ink">
-            {preview.translated_text || <span className="italic text-faint">Not translated yet.</span>}
-          </div>
-        </section>
-      </div>
+      {preview.images ? (
+        <div className="grid min-h-0 flex-1 grid-cols-1 gap-4 overflow-auto md:grid-cols-2">
+          {[false, true].map((translated) => (
+            <figure key={String(translated)} className="m-0 flex flex-col gap-2">
+              <figcaption className={`text-[11px] uppercase tracking-[0.14em] ${translated ? "text-accent" : "text-faint"}`}>
+                {translated ? "Translation" : "Original"}
+              </figcaption>
+              {translated && !preview.translated_text ? (
+                <p className="m-0 italic text-faint">Not translated yet.</p>
+              ) : (
+                <img
+                  src={api.pageImage(Number(bookId), chapterIndex, translated)}
+                  alt={`Page ${chapterIndex + 1}, ${translated ? "translated" : "original"}`}
+                  className="w-full rounded-md border border-line bg-surface"
+                />
+              )}
+            </figure>
+          ))}
+        </div>
+      ) : (
+        <div className="grid min-h-0 flex-1 grid-cols-1 overflow-hidden rounded-md border border-line bg-surface md:grid-cols-2">
+          <section className="overflow-auto border-b border-line p-6 md:border-b-0 md:border-r">
+            <div className="mb-3 text-[11px] uppercase tracking-[0.14em] text-faint">Original</div>
+            <div className="whitespace-pre-wrap font-serif text-[17px] leading-relaxed text-muted">
+              {preview.original_text || <span className="italic text-faint">No text on this page.</span>}
+            </div>
+          </section>
+          <section className="overflow-auto p-6">
+            <div className="mb-3 text-[11px] uppercase tracking-[0.14em] text-accent">Translation</div>
+            <div className="whitespace-pre-wrap font-serif text-[17px] leading-relaxed text-ink">
+              {preview.translated_text || <span className="italic text-faint">Not translated yet.</span>}
+            </div>
+          </section>
+        </div>
+      )}
     </div>
   );
 }
