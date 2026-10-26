@@ -4,7 +4,8 @@
         python scripts/make_sample_manga.py /data/manga-test/sample
 
 writes ``page-1.png`` and ``page-1.json`` (the format read by ``scripts/manga_eval.py``):
-two speech bubbles, a caption drawn over hatched art and a large sound effect.
+two speech bubbles (a manga page: the right one is read first), a caption drawn over hatched
+art and a large sound effect.
 """
 
 import json
@@ -16,8 +17,8 @@ import pymupdf
 WIDTH, HEIGHT = 800, 1200
 # (kind, area, text, font size, bubble)
 REGIONS = [
-    ("dialogue", (60, 80, 360, 280), "WHERE DID\nYOU PUT\nTHE LETTER?", 22, True),
-    ("dialogue", (440, 140, 740, 320), "IT'S NOT\nHERE.", 24, True),
+    ("dialogue", (440, 140, 740, 320), "WHERE DID\nYOU PUT\nTHE LETTER?", 22, True),
+    ("dialogue", (60, 80, 360, 280), "IT'S NOT\nHERE.", 24, True),
     ("caption", (80, 700, 420, 760), "Meanwhile, at the station...", 18, False),
     ("sfx", (440, 800, 770, 980), "BAM!", 90, False),
 ]
