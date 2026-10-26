@@ -12,7 +12,7 @@ import pymupdf
 
 FONTS = Path(__file__).resolve().parents[2] / "data" / "fonts"
 INSET = 0.72  # share of a bubble's box inside its oval: a little under 1/sqrt(2), for margins
-SIZES = (9.0, 36.0)  # px: the font size range
+SIZES = (9.0, 36.0)  # px: the font size range (below 9 only when nothing else fits)
 OUTLINE = 1.5  # px of white around text over the art
 CSS = (
     "@font-face {font-family: comic; src: url(ComicNeue-Bold.ttf);}"
@@ -41,21 +41,46 @@ def font_size(region: dict) -> float:
     return min(max(size, SIZES[0]), SIZES[1])
 
 
-def letter(page: pymupdf.Page, region: dict, text: str) -> None:
-    """Write ``text`` for ``region`` on ``page``, fitted and centred in its room."""
+def _lettering(region: dict, text: str) -> str:
     letters = [c for c in region["text"] if c.isalpha()]
     if letters and sum(c.isupper() for c in letters) > len(letters) / 2:
-        text = text.upper()  # all-caps lettering (a local OCR may read it in mixed case)
-    rect = room(region)
-    body = f'<p style="font-size:{font_size(region):.1f}px">{html.escape(text)}</p>'
-    scratch = pymupdf.open()  # measure first: the unused height centres the text
-    probe = scratch.new_page(width=page.rect.width, height=page.rect.height)
-    spare, _ = probe.insert_htmlbox(rect, body, css=CSS, archive=_ARCHIVE, scale_low=0)
+        return text.upper()  # all-caps lettering (a local OCR may read it in mixed case)
+    return text
+
+
+def _body(size: float, text: str) -> str:
+    return f'<p style="font-size:{size:.1f}px">{html.escape(text)}</p>'
+
+
+def _spare(rect: pymupdf.Rect, body: str, scale_low: float) -> float:
+    """The height left once ``body`` fits ``rect`` (shrunk at most to ``scale_low``), or -1."""
+    scratch = pymupdf.open()
+    probe = scratch.new_page(width=rect.x1 + 1, height=rect.y1 + 1)
+    spare, _ = probe.insert_htmlbox(rect, body, css=CSS, archive=_ARCHIVE, scale_low=scale_low)
+    return spare
+
+
+def fits(region: dict, text: str) -> bool:
+    """Whether ``text`` fits the region's room at the smallest readable size."""
+    return _spare(room(region), _body(SIZES[0], _lettering(region, text)), 1) >= 0
+
+
+def letter(page: pymupdf.Page, region: dict, text: str) -> None:
+    """Write ``text`` for ``region`` on ``page``, fitted and centred in its room: shrunk down
+    to the smallest readable size, and further only when it still does not fit."""
+    text = _lettering(region, text)
+    rect, size = room(region), font_size(region)
+    body = _body(size, text)
+    scale_low = min(SIZES[0] / size, 1)
+    spare = _spare(rect, body, scale_low)  # measured first: the unused height centres it
+    if spare < 0:
+        scale_low = 0
+        spare = _spare(rect, body, scale_low)
     rect += (0, max(spare, 0) / 2, 0, max(spare, 0) / 2)  # vertically centred
     if not region.get("bubble"):
         halo = body.replace("<p ", '<p class="halo" ')
         css = CSS + "p.halo {color: white;}"
         for dx, dy in ((-1, -1), (-1, 1), (1, -1), (1, 1), (-1, 0), (1, 0), (0, -1), (0, 1)):
             shift = (dx * OUTLINE, dy * OUTLINE, dx * OUTLINE, dy * OUTLINE)
-            page.insert_htmlbox(rect + shift, halo, css=css, archive=_ARCHIVE, scale_low=0)
-    page.insert_htmlbox(rect, body, css=CSS, archive=_ARCHIVE, scale_low=0)
+            page.insert_htmlbox(rect + shift, halo, css=css, archive=_ARCHIVE, scale_low=scale_low)
+    page.insert_htmlbox(rect, body, css=CSS, archive=_ARCHIVE, scale_low=scale_low)
