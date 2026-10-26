@@ -25,20 +25,18 @@ def test_bubbles_and_kinds():
         "score": 0.804,
     }
     # manga order by default: the right bubble first, although its text starts lower
-    assert [r["box"] for r in text_regions(SAMPLE)] == [s["box"] for s in SAMPLE[2:4] + SAMPLE[5:]]
+    order = [r["box"] for r in text_regions(SAMPLE)]
+    assert order == [s["box"] for s in SAMPLE[2:4] + [SAMPLE[5], SAMPLE[4]]]
     # a text box mostly outside every bubble has none
     loose = [SAMPLE[0], {"box": [300, 200, 500, 300], "label": "text_bubble", "score": 0.5}]
     assert regions(loose)[0]["bubble"] is None
 
 
-def test_sound_effects_are_left_alone():
-    kinds = [r["kind"] for r in regions(SAMPLE)]
-    assert kinds.count("sfx") == 1 and kinds.count("caption") == 1
-    kept = text_regions(SAMPLE)
-    assert [r["box"] for r in kept if r["kind"] == "caption"] == [SAMPLE[5]["box"]]
-    assert all(r["kind"] != "sfx" for r in kept)
-    # without bubble text on the page there is no scale to compare with: free text is kept
-    assert [r["kind"] for r in regions(SAMPLE[4:])] == ["caption", "caption"]
+def test_free_text_is_a_caption():
+    # sizes do not tell sound effects from narration (real pages: big captions, small SFX);
+    # the synthetic "BAM!" is lettered like text, so it stays until OCR can recognise it
+    assert [r["kind"] for r in regions(SAMPLE)] == ["dialogue", "dialogue", "caption", "caption"]
+    assert text_regions([{**SAMPLE[4], "label": "text_bubble"}])[0]["kind"] == "dialogue"
 
 
 def test_reading_order():
