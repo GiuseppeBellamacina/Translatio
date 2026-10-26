@@ -3,6 +3,7 @@
 import asyncio
 import base64
 import json
+import sqlite3
 import zipfile
 
 import httpx
@@ -134,3 +135,32 @@ def test_manga_upload_preview_and_page_images(tmp_path, monkeypatch, db):
         assert page.status_code == 200 and page.headers["content-type"] == "image/png"
         assert pymupdf.Pixmap(page.content).width == 800  # nothing translated: the original
         assert client.get(f"/api/books/{book['id']}/pages/9.png").status_code == 400
+
+
+async def test_estimate_waits_for_the_pages_to_be_read(tmp_path, monkeypatch, db):
+    from fastapi.testclient import TestClient
+
+    from app.main import app
+
+    path, _, reader = _chapter(tmp_path, monkeypatch)
+    with TestClient(app) as client:
+        with open(path, "rb") as f:
+            book = client.post("/api/upload", files={"file": ("ch1.cbz", f)}).json()
+        before = client.get(f"/api/books/{book['id']}/estimate").json()
+        assert before["unread_pages"] == 2 and before["profile"]["source_tokens"] == 0
+        with sqlite3.connect(settings.db_path) as conn:
+            sql = "select original_path from books where id = ?"
+            (upload,) = conn.execute(sql, (book["id"],)).fetchone()
+        doc = open_document(upload)
+        [e async for e in doc.prepare(reader, asyncio.Event())]
+        after = client.get(f"/api/books/{book['id']}/estimate").json()
+        assert after["unread_pages"] == 0 and after["profile"]["source_tokens"] > 0
+
+
+def test_lettering_case_follows_most_letters():
+    from app.services.manga.typeset import letter
+
+    page = pymupdf.open().new_page(width=600, height=600)
+    region = {"box": [100, 100, 300, 200], "bubble": None, "text": "Che IL MiNISTRO"}
+    letter(page, region, "the minister")
+    assert "THE" in page.get_text()

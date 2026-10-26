@@ -284,6 +284,8 @@ export interface CostEstimate {
   target_language: string;
   prices_fetched_at: number;
   prices_source: "live" | "cache" | "stale-cache" | "bundled";
+  /** manga pages without OCR yet: not in the estimate */
+  unread_pages: number;
   models: ModelEstimate[];
 }
 

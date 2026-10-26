@@ -328,13 +328,15 @@ async def estimate_cost(
 
     # the profile depends on the chunk size: cached for the last size asked
     cached = book.token_profile or {}
-    if cached.get("chunk_tokens") != chunk_tokens:
+    doc = open_document(book.original_path)
+    unread = doc.unread() if isinstance(doc, MangaDocument) else 0  # no text before the OCR
+    if cached.get("chunk_tokens") != chunk_tokens or unread:
         chunker = make_chunker(chunk_tokens)
-        profile = await asyncio.to_thread(
-            lambda: profile_document(open_document(book.original_path), chunker)
-        )
-        book.token_profile = cached = {**asdict(profile), "chunk_tokens": chunk_tokens}
-        await db.commit()
+        profile = await asyncio.to_thread(profile_document, doc, chunker)
+        cached = {**asdict(profile), "chunk_tokens": chunk_tokens}
+        if not unread:  # a manga's profile is final only once every page is read
+            book.token_profile = cached
+            await db.commit()
     profile = TokenProfile(**{k: v for k, v in cached.items() if k != "chunk_tokens"})
     language = target_language or book.target_language
     prices = await get_prices(force_refresh=refresh_prices)
@@ -361,9 +363,12 @@ async def estimate_cost(
                     reasoning=False,
                 )
         if price is None:
-            return estimate(profile, prices, language, {})
+            return {**estimate(profile, prices, language, {}), "unread_pages": unread}
         single = PriceTable({model: price}, prices.fetched_at, prices.source)
-        return estimate(profile, single, language, {price.provider: [model]})
+        return {
+            **estimate(profile, single, language, {price.provider: [model]}),
+            "unread_pages": unread,
+        }
 
     # config.yaml pricing.models (it replaces the built-in list, so it can drop a vendor),
     # plus the default models of configured providers
@@ -373,7 +378,7 @@ async def estimate_cost(
     for provider in providers.scalars():
         if provider.provider_type in models and provider.default_model:
             models[provider.provider_type].append(provider.default_model)
-    return estimate(profile, prices, language, models)
+    return {**estimate(profile, prices, language, models), "unread_pages": unread}
 
 
 @router.get("/books/{book_id}/download")

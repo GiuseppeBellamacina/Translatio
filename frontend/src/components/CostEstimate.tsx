@@ -90,6 +90,12 @@ export function CostEstimate({ bookId }: { bookId: number }) {
         {formatTokens(profile.source_tokens)} source tokens · to{" "}
         <span className="capitalize">{estimate.target_language}</span>
       </p>
+      {estimate.unread_pages > 0 && (
+        <p className="m-0 text-[13px] text-warn">
+          Manga: {estimate.unread_pages} pages not read yet. Their text, and so its cost, is known only after the
+          OCR at the start of the run (a vision model adds one call per page or two).
+        </p>
+      )}
 
       <div className="overflow-x-auto rounded-md border border-line bg-surface">
         <table className="w-full min-w-120 text-sm">
