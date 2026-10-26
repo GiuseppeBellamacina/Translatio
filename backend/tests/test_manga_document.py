@@ -164,3 +164,28 @@ def test_lettering_case_follows_most_letters():
     region = {"box": [100, 100, 300, 200], "bubble": None, "text": "Che IL MiNISTRO"}
     letter(page, region, "the minister")
     assert "THE" in page.get_text()
+
+
+def test_a_folder_of_pages_is_uploaded_as_a_cbz(tmp_path, db):
+    from fastapi.testclient import TestClient
+
+    from app.main import app
+
+    png, _ = sample_page()
+    files = [
+        ("files", ("Ch1/p2.png", png, "image/png")),
+        ("files", ("Ch1/p1.png", png, "image/png")),
+        ("files", ("Ch1/../../escape.png", png, "image/png")),  # stays inside the archive
+        ("files", ("Ch1/notes.txt", b"not a page", "text/plain")),
+    ]
+    with TestClient(app) as client:
+        book = client.post("/api/upload-folder", files=files, data={"name": "Ch1"}).json()
+        assert book["filename"] == "Ch1.cbz" and book["manga"] is True
+        assert book["total_chapters"] == 3
+        empty = client.post("/api/upload-folder", files=[files[3]], data={"name": "Ch1"})
+        assert empty.status_code == 400
+    with sqlite3.connect(settings.db_path) as conn:
+        (upload,) = conn.execute(
+            "select original_path from books where id = ?", (book["id"],)
+        ).fetchone()
+    assert open_document(upload).pages == ["escape.png", "p1.png", "p2.png"]

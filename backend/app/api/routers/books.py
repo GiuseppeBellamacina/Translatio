@@ -5,10 +5,11 @@ import mimetypes
 import shutil
 import time
 import uuid
+import zipfile
 from dataclasses import asdict
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, File, HTTPException, Response, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Response, UploadFile
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -39,7 +40,7 @@ from app.services.chunker import make_chunker
 from app.services.cost_estimator import DEFAULT_MODELS, TokenProfile, estimate, profile_document
 from app.services.documents import open_document
 from app.services.html_processor import extract_visible_text
-from app.services.manga.document import MangaDocument, cache_dir
+from app.services.manga.document import IMAGES, MangaDocument, cache_dir
 from app.services.model_catalog import list_models, price_for
 from app.services.pricing import ModelPrice, PriceTable, get_prices
 
@@ -65,7 +66,30 @@ async def upload_book(file: UploadFile = File(...), db: AsyncSession = Depends(g
     upload_path = settings.uploads_dir / f"{uuid.uuid4().hex[:8]}_{Path(file.filename).name}"
     with open(upload_path, "wb") as f:
         shutil.copyfileobj(file.file, f)
+    return await _register(upload_path, Path(file.filename).name, db)
 
+
+@router.post("/upload-folder", response_model=BookResponse)
+async def upload_folder(
+    files: list[UploadFile] = File(...), name: str = Form(...), db: AsyncSession = Depends(get_db)
+):
+    """A folder of page images (a manga chapter): packed into a CBZ, then a book like one."""
+    pages = [f for f in files if Path(f.filename or "").suffix.lower() in IMAGES]
+    if not pages:
+        raise HTTPException(400, "The folder has no page images (.png, .jpg, .webp)")
+    filename = f"{Path(name).name or 'pages'}.cbz"
+    upload_path = settings.uploads_dir / f"{uuid.uuid4().hex[:8]}_{filename}"
+    with zipfile.ZipFile(upload_path, "w") as archive:
+        for page in pages:
+            # the path inside the folder (subfolders kept), never outside the archive
+            parts = [p for p in Path(page.filename).parts[1:] if p not in ("", ".", "..")]
+            archive.writestr("/".join(parts) or Path(page.filename).name, page.file.read())
+    return await _register(upload_path, filename, db)
+
+
+async def _register(upload_path: Path, filename: str, db: AsyncSession) -> Book:
+    """A book (and its chapters) for a file just written to the uploads folder."""
+    suffix = upload_path.suffix.lower()
     try:
         doc = open_document(upload_path)
         info, units = doc.info(), doc.units
@@ -74,7 +98,7 @@ async def upload_book(file: UploadFile = File(...), db: AsyncSession = Depends(g
         raise HTTPException(400, f"Invalid {suffix[1:].upper()} file: {e}")
 
     book = Book(
-        filename=Path(file.filename).name,
+        filename=filename,
         original_path=str(upload_path),
         source_language=info.get("language") or "english",
         target_language="italian",
