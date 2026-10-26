@@ -27,3 +27,13 @@ def test_bubbles_and_kinds():
     # a text box mostly outside every bubble has none
     loose = [SAMPLE[0], {"box": [300, 200, 500, 300], "label": "text_bubble", "score": 0.5}]
     assert regions(loose)[0]["bubble"] is None
+
+
+def test_sound_effects_are_left_alone():
+    kinds = [r["kind"] for r in regions(SAMPLE)]
+    assert kinds.count("sfx") == 1 and kinds.count("caption") == 1
+    kept = text_regions(SAMPLE)
+    assert [r["box"] for r in kept if r["kind"] == "caption"] == [SAMPLE[5]["box"]]
+    assert all(r["kind"] != "sfx" for r in kept)
+    # without bubble text on the page there is no scale to compare with: free text is kept
+    assert [r["kind"] for r in regions(SAMPLE[4:])] == ["caption", "caption"]
