@@ -367,3 +367,22 @@ def test_saving_settings_changes_only_their_lines_in_config_yaml():
     assert set_keys("providers: []\n", "translation", {"a": 1}) == (
         "providers: []\n\ntranslation:\n  a: 1\n"
     )
+
+
+def test_a_provider_out_of_quota_pauses_the_book(client, sample_epub, monkeypatch):
+    class RateLimitError(Exception):  # the SDKs' name for a 429 that outlived the retries
+        pass
+
+    async def out_of_quota(*args, **kwargs):
+        raise RateLimitError("free-models-per-day")
+        yield
+
+    monkeypatch.setattr("app.jobs.runner.translate_document", out_of_quota)
+    provider_id, (book,) = _setup(client, sample_epub, books=1)
+    client.post("/api/queue", json={"book_ids": [book], "provider_id": provider_id})
+    queue = _wait(client, lambda q: not q["running"])
+    assert [i["status"] for i in queue["items"]] == ["paused"]
+    assert _status(client, book) == "paused"
+    events = client.get(f"/api/books/{book}/progress").json()["recent_events"]
+    assert any("quota" in e.get("message", "") for e in events)
+    assert not any(e["event"] == "error" for e in events)
