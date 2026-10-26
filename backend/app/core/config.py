@@ -47,6 +47,9 @@ class Settings(BaseSettings):
     )
     pricing_refresh_hours: float = 24
 
+    # Manga mode's GPU service (docker-compose.manga.yml); "" = manga mode unavailable
+    manga_ml_url: str = ""
+
     def apply_overrides(self, overrides: dict) -> None:
         for key, value in overrides.items():
             if key in type(self).model_fields:
