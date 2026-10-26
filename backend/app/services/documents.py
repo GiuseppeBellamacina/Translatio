@@ -124,9 +124,14 @@ def open_document(path: str | Path) -> Document:
     if suffix == ".epub":
         return EpubDocument(path)
     if suffix == ".pdf":
-        from app.services.pdf_service import PdfDocument
+        from app.services.pdf_service import PdfDocument, ScannedPdfError
 
-        return PdfDocument(path)
+        try:
+            return PdfDocument(path)
+        except ScannedPdfError:  # pages of images: read like a manga (detection + OCR)
+            from app.services.manga.document import MangaPdf
+
+            return MangaPdf(path)
     if suffix in {".cbz", ".zip"}:
         from app.services.manga.document import MangaDocument
 

@@ -153,23 +153,65 @@ class MangaDocument(Document):
                 message=f"Page {index + 1}/{total} read: {len(regions)} text regions",
             )
 
+    def page(self, index: int, translations: list[str | None] | None) -> bytes | None:
+        """The page lettered on its erased image (PNG), or None when nothing is translated."""
+        if not translations or all(t is None for t in translations):
+            return None
+        clean = self._clean(index)
+        return _typeset(
+            clean.read_bytes() if clean.exists() else self.image(index),
+            self.regions(index),
+            translations,
+            erased=clean.exists(),
+        )
+
     def save(self, path: Path, translations: Translations, reflow: bool = False) -> Path:
         path.parent.mkdir(parents=True, exist_ok=True)
         with zipfile.ZipFile(path, "w") as out:
             for index, name in enumerate(self.pages):
-                page_translations = translations.get(index)
-                if page_translations and any(t is not None for t in page_translations):
-                    clean = self._clean(index)
-                    image = _typeset(
-                        clean.read_bytes() if clean.exists() else self.image(index),
-                        self.regions(index),
-                        page_translations,
-                        erased=clean.exists(),
-                    )
-                    out.writestr(str(Path(name).with_suffix(".png")), image)
+                lettered = self.page(index, translations.get(index))
+                if lettered:
+                    out.writestr(str(Path(name).with_suffix(".png")), lettered)
                 else:
                     out.writestr(name, self.image(index))
         return path
 
     def info(self) -> dict:
         return {"title": self.path.stem, "language": "japanese"}
+
+
+class MangaPdf(MangaDocument):
+    """A PDF of page images (a scan without a text layer) read like a manga, written back as
+    a PDF with the same page sizes."""
+
+    format = "pdf"
+    suffix = ".pdf"
+    media_type = "application/pdf"
+
+    def __init__(self, path: str | Path):
+        self.path = Path(path)
+        with pymupdf.open(self.path) as pdf:
+            self.pages = [f"page-{i + 1}.png" for i in range(len(pdf))]
+        self.cache = cache_dir(self.path)
+
+    def image(self, index: int) -> bytes:
+        """The page at the scan's own resolution (its largest image), as PNG."""
+        with pymupdf.open(self.path) as pdf:
+            page = pdf[index]
+            width = max((info[2] for info in page.get_images()), default=0)
+            zoom = width / page.rect.width if width else 2
+            return page.get_pixmap(matrix=pymupdf.Matrix(zoom, zoom)).tobytes("png")
+
+    def save(self, path: Path, translations: Translations, reflow: bool = False) -> Path:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        out = pymupdf.open()
+        with pymupdf.open(self.path) as pdf:
+            for index, source in enumerate(pdf):
+                lettered = self.page(index, translations.get(index))
+                if lettered:
+                    page = out.new_page(width=source.rect.width, height=source.rect.height)
+                    page.insert_image(page.rect, stream=lettered)
+                else:
+                    out.insert_pdf(pdf, from_page=index, to_page=index)
+        out.save(path, garbage=4, deflate=True)
+        return path

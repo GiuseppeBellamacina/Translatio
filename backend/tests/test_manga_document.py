@@ -98,3 +98,23 @@ async def test_erase_client(monkeypatch):
 
     monkeypatch.setattr(settings, "manga_ml_url", "http://ml:8100")
     assert await erase(b"png", [[1, 2, 3, 4]], httpx.MockTransport(reply)) == b"clean"
+
+
+async def test_a_pdf_of_page_images_is_read_like_a_manga(tmp_path, monkeypatch):
+    _, _, reader = _chapter(tmp_path, monkeypatch)
+    png, _ = sample_page()
+    path = tmp_path / "scan.pdf"
+    scan = pymupdf.open()
+    for _ in range(2):  # 800×1200 px images on 400×600 pt pages
+        scan.new_page(width=400, height=600).insert_image(pymupdf.Rect(0, 0, 400, 600), stream=png)
+    scan.save(path)
+
+    doc = open_document(path)
+    assert type(doc).__name__ == "MangaPdf" and len(doc.units) == 2
+    assert pymupdf.Pixmap(doc.image(0)).width == 800  # the scan's own resolution
+    llm = ScriptedLLM()
+    events = await translate(
+        path, TranslationPipeline(llm=llm, enable_review=False), tmp_path / "out.pdf", reader=reader
+    )
+    out = pymupdf.open(events[-1].data["output_path"])
+    assert [p.rect for p in out] == [pymupdf.Rect(0, 0, 400, 600)] * 2
