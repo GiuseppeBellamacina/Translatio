@@ -42,3 +42,12 @@ def test_fits_and_the_readable_minimum():
     words = page.get_text("words")
     inside = room(small) + (-2, -2, 2, 2)  # the outline copies are 1.5 px off
     assert words and all(inside.contains(pymupdf.Rect(w[:4])) for w in words)
+
+
+def test_cjk_text_falls_back_to_a_builtin_font():
+    # Comic Neue is Latin only: MuPDF letters CJK with its built-in fallback (horizontal)
+    for text in ("どこに手紙を置いたの？", "你把信放在哪里了？", "편지를 어디에 뒀어?"):
+        page = pymupdf.open().new_page(width=600, height=600)
+        letter(page, IN_BUBBLE, text)
+        assert page.get_text().replace("\n", "") == text
+        assert "Droid Sans Fallback Regular" in {font[3] for font in page.get_fonts()}
