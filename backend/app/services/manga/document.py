@@ -23,7 +23,7 @@ from app.services.manga.erase import erase
 from app.services.manga.ocr import is_sfx
 from app.services.manga.panels import panels
 from app.services.manga.regions import text_regions
-from app.services.manga.typeset import letter
+from app.services.manga.typeset import fits, letter
 
 IMAGES = {".png", ".jpg", ".jpeg", ".webp"}
 Reader = Callable[[bytes, list[list[float]]], Awaitable[list[str]]]  # page, boxes → texts
@@ -156,6 +156,19 @@ class MangaDocument(Document):
                 total_chapters=total,
                 message=f"Page {index + 1}/{total} read: {len(regions)} text regions",
             )
+
+    def fit_doubts(self, index: int, translations: list[str | None] | None) -> list[dict]:
+        regions = self.regions(index)
+        return [
+            {
+                "block": block,
+                "quote": region["text"][:80],
+                "reason": "Too long for its speech bubble, even at the smallest readable size: "
+                "shorten it, keeping the meaning and the tone.",
+            }
+            for block, (region, text) in enumerate(zip(regions, translations or [], strict=False))
+            if text and not fits(region, text)
+        ]
 
     def page(self, index: int, translations: list[str | None] | None) -> bytes | None:
         """The page lettered on its erased image (PNG), or None when nothing is translated."""

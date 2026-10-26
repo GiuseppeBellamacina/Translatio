@@ -2,7 +2,7 @@
 
 import pymupdf
 
-from app.services.manga.typeset import letter, room
+from app.services.manga.typeset import fits, letter, room
 
 BUBBLE = [100, 100, 300, 260]
 IN_BUBBLE = {"box": [150, 150, 250, 210], "bubble": BUBBLE, "text": "CIAO A TUTTI"}
@@ -32,3 +32,13 @@ def test_letter_is_fitted_centred_and_keeps_the_case():
     letter(page, OVER_ART, "Meanwhile, at the station...")
     words = [w[4] for w in page.get_text("words")]
     assert words.count("Meanwhile,") == 9  # 8 white copies for the outline, then the text
+
+
+def test_fits_and_the_readable_minimum():
+    small = {"box": [100, 100, 160, 120], "bubble": None, "text": "OK"}
+    assert fits(small, "Ok") and not fits(small, "This is far too long for so small a box " * 3)
+    page = pymupdf.open().new_page(width=600, height=600)
+    letter(page, small, "This is far too long for so small a box " * 3)  # still inside its room
+    words = page.get_text("words")
+    inside = room(small) + (-2, -2, 2, 2)  # the outline copies are 1.5 px off
+    assert words and all(inside.contains(pymupdf.Rect(w[:4])) for w in words)
