@@ -205,3 +205,22 @@ async def test_text_too_long_for_its_bubble_goes_to_the_doubt_review(tmp_path, m
     assert len(llm.calls_for(DoubtResolution)) == 1  # shortened by the doubt review
     saved = [e for e in events if e.event_type == "chapter_saved"][-1]
     assert saved.data["translations"][2] == "Later..."
+
+
+async def test_a_pause_stops_reading_mid_page(tmp_path, monkeypatch):
+    path, _, _ = _chapter(tmp_path, monkeypatch, pages=2)
+    cancelled = asyncio.Event()
+
+    async def slow(image: bytes, boxes: list) -> list[str]:
+        cancelled.set()  # paused while this page is being read
+        await asyncio.sleep(30)
+        return TEXTS
+
+    doc = open_document(path)
+    events = await asyncio.wait_for(_all(doc.prepare(slow, cancelled)), timeout=5)
+    assert events == [] and not (doc.cache / "page-1.json").exists()  # read again on resume
+    assert "speech bubble" in doc.style
+
+
+async def _all(events):
+    return [e async for e in events]

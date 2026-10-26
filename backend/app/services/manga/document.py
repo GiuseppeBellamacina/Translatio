@@ -67,6 +67,10 @@ class MangaDocument(Document):
     suffix = ".cbz"
     media_type = "application/vnd.comicbook+zip"
     right_to_left = True  # manga keep the Japanese layout in every language
+    style = (
+        "Comic dialogue: each text goes back into its speech bubble, so keep it about as "
+        "short as the original, natural and spoken."
+    )
 
     def __init__(self, path: str | Path):
         self.path = Path(path)
@@ -125,7 +129,7 @@ class MangaDocument(Document):
         self, reader: Reader | None, cancelled: asyncio.Event
     ) -> AsyncIterator[TranslationProgress]:
         """Read the pages not read yet, then erase their lettering (a page read before is only
-        erased); stops early when the run is cancelled."""
+        erased); a cancelled run stops at once, the page in hand left for the next one."""
         if reader is None:
             raise ValueError("A manga needs an OCR reader")
         self.cache.mkdir(exist_ok=True)
@@ -135,27 +139,39 @@ class MangaDocument(Document):
                 return
             if self._clean(index).exists():
                 continue
-            image = self.image(index)
-            if not self._cached(index).exists():
-                detected = await detect(image)
-                order = panels(image, [d["box"] for d in detected], self.right_to_left)
-                found = text_regions(detected, self.right_to_left, order)
-                texts = await reader(image, [r["box"] for r in found])
-                regions = [
-                    {"box": r["box"], "kind": r["kind"], "bubble": r["bubble"], "text": t}
-                    for r, t in zip(found, texts, strict=True)
-                    if t.strip() and not is_sfx(t)  # sound effects stay as drawn
-                ]
-                _write(self._cached(index), json.dumps(regions, ensure_ascii=False).encode())
-            regions = self.regions(index)
-            clean = await erase(image, [r["box"] for r in regions]) if regions else image
-            _write(self._clean(index), clean)
+            work = asyncio.ensure_future(self._read(index, reader))
+            stop = asyncio.ensure_future(cancelled.wait())
+            await asyncio.wait({work, stop}, return_when=asyncio.FIRST_COMPLETED)
+            stop.cancel()
+            if not work.done():  # paused mid-page (a vision OCR call can take a minute)
+                work.cancel()
+                return
+            regions = work.result()
             yield TranslationProgress(
                 event_type="page_read",
                 chapter_index=index,
                 total_chapters=total,
                 message=f"Page {index + 1}/{total} read: {len(regions)} text regions",
             )
+
+    async def _read(self, index: int, reader: Reader) -> list[dict]:
+        """Read one page (unless its regions are cached) and erase its lettering."""
+        image = self.image(index)
+        if not self._cached(index).exists():
+            detected = await detect(image)
+            order = panels(image, [d["box"] for d in detected], self.right_to_left)
+            found = text_regions(detected, self.right_to_left, order)
+            texts = await reader(image, [r["box"] for r in found])
+            regions = [
+                {"box": r["box"], "kind": r["kind"], "bubble": r["bubble"], "text": t}
+                for r, t in zip(found, texts, strict=True)
+                if t.strip() and not is_sfx(t)  # sound effects stay as drawn
+            ]
+            _write(self._cached(index), json.dumps(regions, ensure_ascii=False).encode())
+        regions = self.regions(index)
+        clean = await erase(image, [r["box"] for r in regions]) if regions else image
+        _write(self._clean(index), clean)
+        return regions
 
     def fit_doubts(self, index: int, translations: list[str | None] | None) -> list[dict]:
         regions = self.regions(index)
