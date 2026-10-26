@@ -20,6 +20,8 @@ from collections.abc import Awaitable, Callable
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from app.services.manga.detect import TEXT_LABELS  # noqa: E402
+from app.services.manga.detect import detect as ml_detect  # noqa: E402
 from app.services.manga.metrics import SFX, rates, score_page  # noqa: E402
 
 IMAGES = {".png", ".jpg", ".jpeg", ".webp"}
@@ -32,7 +34,12 @@ async def _truth(image: Path) -> list[dict]:
     return [b for b in boxes if b["kind"] != SFX]
 
 
-DETECTORS: dict[str, Detector] = {"truth": _truth}
+async def _ml(image: Path) -> list[dict]:
+    """The GPU detector's text boxes (in bubbles and free), SFX included."""
+    return [r for r in await ml_detect(image.read_bytes()) if r["label"] in TEXT_LABELS]
+
+
+DETECTORS: dict[str, Detector] = {"truth": _truth, "ml": _ml}
 
 
 def _natural(path: Path) -> list:

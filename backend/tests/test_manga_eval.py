@@ -3,8 +3,12 @@
 import json
 from collections import Counter
 
+import httpx
 import pymupdf
+import pytest
 
+from app.core.config import settings
+from app.services.manga.detect import detect
 from app.services.manga.metrics import edit_distance, iou, match, rates, score_page
 from scripts.make_sample_manga import HEIGHT, REGIONS, WIDTH, sample_page
 from scripts.manga_eval import DETECTORS, evaluate
@@ -78,3 +82,17 @@ async def test_eval_scores_and_bootstraps(tmp_path):
     assert [name for name, _ in rows] == ["page-10.png"]  # natural order, draft not scored
     rows, _ = await evaluate(tmp_path, everything)
     assert [name for name, _ in rows] == ["page-2.png", "page-10.png"]
+
+
+async def test_detect_client(monkeypatch):
+    regions = [{"box": [1, 2, 3, 4], "label": "text_free", "score": 0.9}]
+
+    def reply(request: httpx.Request) -> httpx.Response:
+        assert request.url.path == "/detect" and request.content == b"png"
+        return httpx.Response(200, json={"width": 8, "height": 8, "regions": regions})
+
+    monkeypatch.setattr(settings, "manga_ml_url", "")
+    with pytest.raises(RuntimeError, match="TRANSLATIO_MANGA_ML_URL"):
+        await detect(b"png")
+    monkeypatch.setattr(settings, "manga_ml_url", "http://ml:8100")
+    assert await detect(b"png", transport=httpx.MockTransport(reply)) == regions
