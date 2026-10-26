@@ -77,7 +77,7 @@ Monorepo: `backend/` (FastAPI + LangChain/LangGraph + async SQLAlchemy/aiosqlite
 
 **Manga mode** (`docker compose -f docker-compose.yml -f docker-compose.dev.yml -f docker-compose.manga.yml up --build`; branch `manga`, in progress: `docs/manga-plan.md`, epic #143, sources in `docs/manga-sources.md`): `app/services/manga/`. Every stage is measured before it is chosen:
 - **Metrics** (`metrics.py`): a region is `{"box": [x0, y0, x1, y1], "kind": "dialogue|caption|sfx", "text"}` in image pixels. It reports precision/recall (IoU ≥ 0.5, greedy matching), the share of ground-truth SFX detected by mistake (SFX must be left alone) and the OCR character error rate.
-- **Test pages**: `data/manga-test/{en,ja}/<chapter>/` (gitignored, never committed), each image with a `<page>.json` ground truth.
+- **Test pages**: `data/manga-test/<language>/<chapter>/` (gitignored, never committed), each image with a `<page>.json` ground truth.
 - **Scoring**: `scripts/manga_eval.py <folder> [--detector X] [--bootstrap]` scores them. `--bootstrap` drafts the missing ground truth (every region in reading order, SFX labelled) and draws it in `check/<page>.png` (numbered; blue dialogue, green captions, red SFX), so it can be confirmed by eye.
 - **Synthetic page**: `scripts/make_sample_manga.py` draws one (bubbles, a caption over hatched art, a big SFX) with exact ground truth, for tests.
 - **GPU service** (`ml/`, started with the `docker-compose.manga.yml` override on an NVIDIA GPU): the ML models live there, so the backend image and the tests have no ML dependencies.
@@ -86,8 +86,8 @@ Monorepo: `backend/` (FastAPI + LangChain/LangGraph + async SQLAlchemy/aiosqlite
   - `regions.py` turns the boxes into regions:
     - text in a bubble is `dialogue`, and its bubble box is kept;
     - free text is a `caption`, or `sfx` when its short side exceeds `SFX_SCALE` times the page's median bubble text (a shortcut until OCR gives a glyph size); SFX are never translated;
-    - the order is rows by vertical overlap, right to left for Japanese.
-  - `manga_eval.py --detector regions` (the default) scores it; it reads pages under a `ja` folder right to left.
+    - the order is rows by vertical overlap (of the bubble, when there is one), right to left: published manga keep that layout in every language; `right_to_left=False` for western comics.
+  - `manga_eval.py --detector regions` (the default) scores it (`--ltr` for western comics).
   - The backend reaches it through `manga_ml_url` (`TRANSLATIO_MANGA_ML_URL`, empty = manga mode unavailable) with `app/services/manga/detect.py`; tests use `httpx.MockTransport`.
 
 Progress events are forwarded to the client as `{"event": event_type, chapter_index, total_chapters, chunk_index, total_chunks, message, data, ts}` (bulky `translations`/`translated_html` stripped). `src/hooks/useTranslationWs.ts` keeps the raw events (newest first). `src/lib/jobEvents.ts` derives the live chunks (`liveChunks`, using `chunk_translated.data.source_text`/`translated_text` and the review events) and the activity rows (`logEntries`). Event names are a contract with that file.

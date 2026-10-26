@@ -31,6 +31,7 @@ from app.services.manga.regions import regions, text_regions  # noqa: E402
 
 IMAGES = {".png", ".jpg", ".jpeg", ".webp"}
 Detector = Callable[[Path], Awaitable[list[dict]]]
+right_to_left = True  # manga in any language; --ltr for western comics
 COLOURS = {"dialogue": (0, 0.4, 1), "caption": (0, 0.6, 0), SFX: (0.9, 0, 0)}
 
 
@@ -46,14 +47,14 @@ async def _ml(image: Path) -> list[dict]:
 
 
 async def _regions(image: Path) -> list[dict]:
-    """Text regions in reading order without SFX (right to left for pages under a `ja` folder)."""
+    """Text regions in reading order without SFX."""
     detected = await ml_detect(image.read_bytes())
-    return text_regions(detected, right_to_left="ja" in image.parts)
+    return text_regions(detected, right_to_left)
 
 
 async def _all_regions(image: Path) -> list[dict]:
     """Every region in reading order, SFX labelled: the drafts of `--bootstrap`."""
-    return regions(await ml_detect(image.read_bytes()), right_to_left="ja" in image.parts)
+    return regions(await ml_detect(image.read_bytes()), right_to_left)
 
 
 DETECTORS: dict[str, Detector] = {"truth": _truth, "ml": _ml, "regions": _regions}
@@ -135,7 +136,10 @@ def main() -> None:
     parser.add_argument(
         "--bootstrap", action="store_true", help="draft missing ground truth, SFX included"
     )
+    parser.add_argument("--ltr", action="store_true", help="read left to right (western comics)")
     args = parser.parse_args()
+    global right_to_left
+    right_to_left = not args.ltr
     rows, total = asyncio.run(
         evaluate(args.folder, DETECTORS[args.detector], _all_regions if args.bootstrap else None)
     )

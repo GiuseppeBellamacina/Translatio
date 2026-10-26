@@ -28,14 +28,15 @@ def _short(box: list[float]) -> float:
 
 def reading_order(found: list[dict], right_to_left: bool) -> list[dict]:
     """Rows of regions that overlap vertically, top to bottom, each row read right to left
-    (Japanese) or left to right.
+    (manga, in any language: translated editions keep the layout) or left to right (comics).
 
     shortcut: no panel detection, so a tall bubble can join two rows of panels; use Magi-like
     panel order if the eval's order score shows it.
     """
+    area = lambda r: r.get("bubble") or r["box"]  # noqa: E731  a bubble places its text
     rows: list[tuple[float, list[dict]]] = []  # (row bottom, regions)
-    for r in sorted(found, key=lambda r: r["box"][1]):
-        top, bottom = r["box"][1], r["box"][3]
+    for r in sorted(found, key=lambda r: area(r)[1]):
+        top, bottom = area(r)[1], area(r)[3]
         if rows and rows[-1][0] - top >= (bottom - top) / 2:
             rows[-1] = (max(rows[-1][0], bottom), rows[-1][1] + [r])
         else:
@@ -43,11 +44,11 @@ def reading_order(found: list[dict], right_to_left: bool) -> list[dict]:
     return [
         r
         for _, row in rows
-        for r in sorted(row, key=lambda r: r["box"][0] + r["box"][2], reverse=right_to_left)
+        for r in sorted(row, key=lambda r: area(r)[0] + area(r)[2], reverse=right_to_left)
     ]
 
 
-def regions(detected: list[dict], right_to_left: bool = False) -> list[dict]:
+def regions(detected: list[dict], right_to_left: bool = True) -> list[dict]:
     bubbles = [d["box"] for d in detected if d["label"] == "bubble"]
     in_bubbles = [_short(d["box"]) for d in detected if d["label"] == "text_bubble"]
     usual = median(in_bubbles) if in_bubbles else None  # no bubble text: nothing to compare
@@ -68,6 +69,6 @@ def regions(detected: list[dict], right_to_left: bool = False) -> list[dict]:
     return reading_order(found, right_to_left)
 
 
-def text_regions(detected: list[dict], right_to_left: bool = False) -> list[dict]:
+def text_regions(detected: list[dict], right_to_left: bool = True) -> list[dict]:
     """The regions to translate, in reading order: sound effects are left alone."""
     return [r for r in regions(detected, right_to_left) if r["kind"] != SFX]
