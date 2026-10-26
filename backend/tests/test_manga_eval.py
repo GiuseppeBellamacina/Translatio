@@ -9,12 +9,18 @@ import pymupdf
 import pytest
 
 from app.core.config import settings
+from app.core.fake_llm import FakeChatModel
+from app.models.schemas import Transcription
 from app.services.manga.detect import detect
 from app.services.manga.metrics import edit_distance, iou, match, rates, score_page
 from app.services.manga.ocr import clean, read
+from app.services.manga.vision import SHEET_HEIGHT
+from app.services.manga.vision import read as vision_read
+from app.services.manga.vision import sheets
 from scripts import manga_eval
 from scripts.make_sample_manga import HEIGHT, REGIONS, WIDTH, sample_page
 from scripts.manga_eval import DETECTORS, evaluate
+from tests.conftest import ScriptedLLM
 from tests.test_manga_regions import SAMPLE
 
 
@@ -143,3 +149,25 @@ async def test_ocr_client(monkeypatch):
     monkeypatch.setattr(settings, "manga_ml_url", "http://ml:8100")
     texts = await read(b"png", [[1, 2, 3, 4]], "easyocr", "it", httpx.MockTransport(reply))
     assert texts == ["CIAONE"]
+
+
+def test_vision_sheets_number_every_box():
+    png, truth = sample_page()
+    found = sheets(png, [t["box"] for t in truth] * 6)  # 24 boxes: more than one sheet
+    assert sum(count for _, count in found) == 24 and len(found) > 1
+    for image, _ in found:
+        assert pymupdf.Pixmap(image).height <= SHEET_HEIGHT
+
+
+async def test_vision_read_retries_a_wrong_count(monkeypatch):
+    png, truth = sample_page()
+    llm = ScriptedLLM()
+    llm.handlers[Transcription] = lambda text, call: Transcription(
+        texts=["WHERE DID YOU PUT THE LET-\nTER?"] * (1 if call == 1 else 2)
+    )
+    monkeypatch.setattr(settings, "chain_retries", 2)
+    texts = await vision_read(png, [t["box"] for t in truth[:2]], llm)
+    assert texts == ["WHERE DID YOU PUT THE LETTER?"] * 2
+    assert len(llm.calls_for(Transcription)) == 2
+    # the fake provider answers one text per box
+    assert await vision_read(png, [t["box"] for t in truth], FakeChatModel()) == ["BAU"] * 4
