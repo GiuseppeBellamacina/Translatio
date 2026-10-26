@@ -75,6 +75,12 @@ Monorepo: `backend/` (FastAPI + LangChain/LangGraph + async SQLAlchemy/aiosqlite
 - **Continuous text** (`services/pdf_reflow.py`, run switch `RunConfig.reflow_pdf`, off by default; `PdfDocument.save(..., reflow=True)`): after typesetting, the book is laid out again as one flow at its own body size (the size of the pages that did not shrink), uniform spacing/indent/alignment, a paragraph cut by a page end joined; a chapter (a heading at the top of a page, text or image) starts a page; full-page illustrations float to right after the page where the text reaches them; small images stay in the flow; front matter is kept; footers ("N | Pagina", or "Page" left untranslated) are renumbered; outline and contents links point to the new pages (exact for chapter starts). The page count may change. `scripts/reflow_pdf.py <folder|file> <out folder>` does it for PDFs already translated.
 - **Limits**: scanned PDFs (no text layer) are rejected, and text drawn as images stays untranslated.
 
+**Manga mode** (branch `manga`, in progress: `docs/manga-plan.md`, epic #143, sources in `docs/manga-sources.md`): `app/services/manga/`. Every stage is measured before it is chosen:
+- **Metrics** (`metrics.py`): a region is `{"box": [x0, y0, x1, y1], "kind": "dialogue|caption|sfx", "text"}` in image pixels. It reports precision/recall (IoU ≥ 0.5, greedy matching), the share of ground-truth SFX detected by mistake (SFX must be left alone) and the OCR character error rate.
+- **Test pages**: `data/manga-test/{en,ja}/<chapter>/` (gitignored, never committed), each image with a `<page>.json` ground truth.
+- **Scoring**: `scripts/manga_eval.py <folder> [--detector X] [--bootstrap]` scores them. `--bootstrap` drafts the missing ground truth from the detector, to correct by hand.
+- **Synthetic page**: `scripts/make_sample_manga.py` draws one (bubbles, a caption over hatched art, a big SFX) with exact ground truth, for tests.
+
 Progress events are forwarded to the client as `{"event": event_type, chapter_index, total_chapters, chunk_index, total_chunks, message, data, ts}` (bulky `translations`/`translated_html` stripped). `src/hooks/useTranslationWs.ts` keeps the raw events (newest first). `src/lib/jobEvents.ts` derives the live chunks (`liveChunks`, using `chunk_translated.data.source_text`/`translated_text` and the review events) and the activity rows (`logEntries`). Event names are a contract with that file.
 
 **Frontend design system**:
