@@ -71,6 +71,8 @@ def sheets(image: bytes, boxes: list[list[float]]) -> list[tuple[bytes, int]]:
 
 async def _sheet(png: bytes, count: int, llm: BaseChatModel) -> list[str]:
     def check(result: Transcription) -> list[str]:
+        if count == 1 and result.texts:  # one box read as several lines
+            return [" ".join(result.texts)]
         if len(result.texts) != count:  # retried: a lost or merged box shifts every text
             raise ValueError(f"{len(result.texts)} texts for {count} boxes")
         return result.texts

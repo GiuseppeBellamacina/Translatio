@@ -178,11 +178,13 @@ async def test_vision_read_falls_back_to_single_boxes(monkeypatch):
     llm = ScriptedLLM()
     # a model that always returns one text too many on a sheet of several boxes
     llm.handlers[Transcription] = lambda text, call: Transcription(
-        texts=["A", "B"] if "Boxes: 1." in text else ["A"] * 5
+        texts=[] if "Boxes: 1." in text else ["A"] * 5
     )
     monkeypatch.setattr(settings, "chain_retries", 1)
     with pytest.raises(ValueError):
         await vision_read(png, [truth[0]["box"]], llm)
+    llm.handlers[Transcription] = lambda text, call: Transcription(texts=["A", "B"])
+    assert await vision_read(png, [truth[0]["box"]], llm) == ["A B"]  # lines of one box
     llm.handlers[Transcription] = lambda text, call: Transcription(
         texts=["A"] if "Boxes: 1." in text else ["A"] * 5
     )
