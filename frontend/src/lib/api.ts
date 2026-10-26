@@ -73,9 +73,20 @@ export const api = {
     if (!res.ok) throw await errorFrom(res);
     return res.json();
   },
+  /** A folder of manga page images, packed into a CBZ on the server. */
+  uploadFolder: async (name: string, files: File[]): Promise<Book> => {
+    const form = new FormData();
+    form.append("name", name);
+    for (const file of files) form.append("files", file, file.webkitRelativePath || file.name);
+    const res = await fetch(`${API_BASE}/upload-folder`, { method: "POST", body: form });
+    if (!res.ok) throw await errorFrom(res);
+    return res.json();
+  },
   getPreview: (bookId: number, chapter: number) =>
     request<Preview>(`/books/${bookId}/preview?chapter_index=${chapter}`),
   downloadBook: (bookId: number) => `${API_BASE}/books/${bookId}/download`,
+  pageImage: (bookId: number, index: number, translated: boolean) =>
+    `${API_BASE}/books/${bookId}/pages/${index}.png?translated=${translated}`,
   getEstimate: (
     bookId: number,
     options: { refreshPrices?: boolean; providerId?: number; model?: string } = {},
@@ -197,6 +208,8 @@ export interface Book {
   total_chapters: number;
   translated_chapters: number;
   created_at: string;
+  /** pages of images (CBZ/ZIP, scanned PDF), read with OCR first */
+  manga?: boolean | null;
 }
 
 export interface BookDetail extends Book {
@@ -219,6 +232,8 @@ export interface Preview {
   original_text: string;
   translated_text: string;
   original_html: string;
+  /** a manga page: show the page images */
+  images?: boolean;
 }
 
 /** A passage translated with a doubt, revisited by the end-of-book doubt review. */
@@ -278,6 +293,8 @@ export interface CostEstimate {
   target_language: string;
   prices_fetched_at: number;
   prices_source: "live" | "cache" | "stale-cache" | "bundled";
+  /** manga pages without OCR yet: not in the estimate */
+  unread_pages: number;
   models: ModelEstimate[];
 }
 
@@ -355,6 +372,8 @@ export interface RunConfig extends Partial<Features> {
   source_language?: string | null;
   target_language?: string | null;
   style_instructions: string;
+  /** manga: vision model on the provider reading the pages; "" = local OCR */
+  ocr_model?: string;
 }
 
 export interface QueueItem {

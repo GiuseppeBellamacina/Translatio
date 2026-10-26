@@ -160,6 +160,7 @@ export function logEntries(eventsNewestFirst: JobEvent[], unitAbbr: string): Log
       case "cancelled":
       case "job_complete":
       case "building_epub":
+      case "page_read":
         out.push({ ...base, kind: "info", unit: null, text: e.message ?? e.event });
         break;
     }

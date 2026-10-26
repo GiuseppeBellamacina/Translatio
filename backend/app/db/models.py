@@ -47,6 +47,7 @@ class Book(Base):
     # False: fixes after an edit start without asking (run switch, or confirmed once)
     ask_before_fixes = Column(Boolean, nullable=True)
     token_profile = Column(JSON, nullable=True)  # cost_estimator.TokenProfile, computed once
+    manga = Column(Boolean, nullable=True)  # pages of images (CBZ/ZIP, scanned PDF): OCR first
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 

@@ -144,11 +144,19 @@ async def translate_document(
     max_concurrency: int = 1,
     bookmarks: list[dict] | None = None,
     reflow: bool = False,
+    reader: Any = None,
 ) -> AsyncGenerator[TranslationProgress, None]:
-    """``bookmarks``: the open doubts of earlier runs (``unit``, ``block``, ``quote``, ``reason``)."""
+    """``bookmarks``: the open doubts of earlier runs (``unit``, ``block``, ``quote``, ``reason``).
+    ``reader``: the OCR of formats that need one (manga pages)."""
     previous = previous or {}
     units = doc.units
     total = len(units)
+
+    # Phase 0: what the format needs first (manga: reading the pages, cached)
+    async for event in doc.prepare(reader, pipeline.cancelled):
+        yield event
+    if pipeline.cancelled.is_set():
+        return
 
     # Phase 1: analysis
     if analysis:

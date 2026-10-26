@@ -85,6 +85,7 @@ class BookResponse(BaseModel):
     total_chapters: int
     translated_chapters: int
     created_at: datetime
+    manga: bool | None = None  # pages of images, read with OCR first
 
     class Config:
         from_attributes = True

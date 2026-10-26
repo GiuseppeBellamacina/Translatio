@@ -8,7 +8,7 @@ from app.agents.pipeline import TranslationPipeline
 from app.core.fake_llm import _extract_source_text
 from app.models.schemas import TranslationResult
 from app.services.documents import open_document
-from app.services.pdf_service import PdfBlock, ScannedPdfError, Style, block_html
+from app.services.pdf_service import PdfBlock, PdfDocument, ScannedPdfError, Style, block_html
 from tests.conftest import translate
 
 PARAGRAPH = (
@@ -105,20 +105,21 @@ def test_unbalanced_placeholders_fall_back_to_plain_text():
     assert block_html(block, "x <1>y z") == "x y z"
 
 
-def test_scanned_pdf_is_rejected(tmp_path, db):
+def test_scanned_pdf_opens_as_page_images(tmp_path, db):
     doc = pymupdf.open()
     pix = pymupdf.Pixmap(pymupdf.csRGB, pymupdf.IRect(0, 0, 10, 10), False)
     doc.new_page().insert_image(pymupdf.Rect(0, 0, 100, 100), pixmap=pix)
     path = tmp_path / "scan.pdf"
     doc.save(path)
     with pytest.raises(ScannedPdfError):
-        open_document(path)
+        PdfDocument(path)
+    assert type(open_document(path)).__name__ == "MangaPdf"  # read with detection + OCR
 
     from app.main import app
 
     with TestClient(app) as client, open(path, "rb") as f:
         response = client.post("/api/upload", files={"file": ("scan.pdf", f)})
-    assert response.status_code == 400 and "no text layer" in response.json()["detail"]
+    assert response.status_code == 200 and response.json()["total_chapters"] == 1
 
 
 def test_pdf_upload_translate_download(db, sample_pdf):

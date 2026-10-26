@@ -91,6 +91,7 @@ export function QueueDialog({
                 value={settings}
                 onChange={(patch) => setSettings((s) => s && { ...s, ...patch })}
                 sourceAuto
+                manga={books.some((b) => b.manga)}
               />
             ) : (
               <Loader2 className="mx-auto h-5 w-5 animate-spin text-faint" aria-label="Loading" />

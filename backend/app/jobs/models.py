@@ -21,6 +21,7 @@ class RunConfig(BaseModel):
     # after an edit touching many passages (or notes), ask before fixing them; off: fix
     ask_before_fixes: bool = True
     reflow_pdf: bool = False  # PDF output as continuous text (the page count may change)
+    ocr_model: str = ""  # manga: vision model on the run's provider; "" = local easyocr
     source_language: str | None = None  # None: the book's own
     target_language: str | None = None
     style_instructions: str = ""

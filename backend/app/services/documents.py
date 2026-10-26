@@ -8,9 +8,12 @@ flow, checkpoints and resume logic are format-agnostic. ``save`` writes the
 output in the same format as the input, changing only the text.
 """
 
+import asyncio
 from abc import ABC, abstractmethod
+from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 import ebooklib
 from ebooklib import epub
@@ -60,6 +63,12 @@ class Document(ABC):
     @abstractmethod
     def info(self) -> dict:
         """Metadata: ``title`` and ``language`` (best effort)."""
+
+    async def prepare(self, reader: Any, cancelled: asyncio.Event) -> AsyncIterator[Any]:
+        """Work before the translation, yielding progress events (manga: reading the pages
+        with ``reader``, the run's OCR). Text formats have none."""
+        return
+        yield
 
 
 class EpubDocument(Document):
@@ -115,9 +124,18 @@ def open_document(path: str | Path) -> Document:
     if suffix == ".epub":
         return EpubDocument(path)
     if suffix == ".pdf":
-        from app.services.pdf_service import PdfDocument
+        from app.services.pdf_service import PdfDocument, ScannedPdfError
 
-        return PdfDocument(path)
+        try:
+            return PdfDocument(path)
+        except ScannedPdfError:  # pages of images: read like a manga (detection + OCR)
+            from app.services.manga.document import MangaPdf
+
+            return MangaPdf(path)
+    if suffix in {".cbz", ".zip"}:
+        from app.services.manga.document import MangaDocument
+
+        return MangaDocument(path)
     raise ValueError(f"Unsupported document format: {suffix}")
 
 

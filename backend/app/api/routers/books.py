@@ -1,13 +1,15 @@
 """Books: upload, list, delete, detail, preview, progress, estimate, download."""
 
 import asyncio
+import mimetypes
 import shutil
 import time
 import uuid
+import zipfile
 from dataclasses import asdict
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Response, UploadFile
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -38,6 +40,7 @@ from app.services.chunker import make_chunker
 from app.services.cost_estimator import DEFAULT_MODELS, TokenProfile, estimate, profile_document
 from app.services.documents import open_document
 from app.services.html_processor import extract_visible_text
+from app.services.manga.document import IMAGES, MangaDocument, cache_dir
 from app.services.model_catalog import list_models, price_for
 from app.services.pricing import ModelPrice, PriceTable, get_prices
 
@@ -50,20 +53,43 @@ router = APIRouter()
 # === BOOKS ===
 
 
-SUPPORTED_SUFFIXES = {".epub", ".pdf"}
+SUPPORTED_SUFFIXES = {".epub", ".pdf", ".cbz", ".zip"}  # .cbz/.zip: manga pages
 
 
 @router.post("/upload", response_model=BookResponse)
 async def upload_book(file: UploadFile = File(...), db: AsyncSession = Depends(get_db)):
     suffix = Path(file.filename or "").suffix.lower()
     if suffix not in SUPPORTED_SUFFIXES:
-        raise HTTPException(400, "Only .epub and .pdf files are supported")
+        raise HTTPException(400, "Only .epub, .pdf and .cbz/.zip (manga) files are supported")
 
     # Unique name on disk: two uploads with the same filename must not overwrite each other
     upload_path = settings.uploads_dir / f"{uuid.uuid4().hex[:8]}_{Path(file.filename).name}"
     with open(upload_path, "wb") as f:
         shutil.copyfileobj(file.file, f)
+    return await _register(upload_path, Path(file.filename).name, db)
 
+
+@router.post("/upload-folder", response_model=BookResponse)
+async def upload_folder(
+    files: list[UploadFile] = File(...), name: str = Form(...), db: AsyncSession = Depends(get_db)
+):
+    """A folder of page images (a manga chapter): packed into a CBZ, then a book like one."""
+    pages = [f for f in files if Path(f.filename or "").suffix.lower() in IMAGES]
+    if not pages:
+        raise HTTPException(400, "The folder has no page images (.png, .jpg, .webp)")
+    filename = f"{Path(name).name or 'pages'}.cbz"
+    upload_path = settings.uploads_dir / f"{uuid.uuid4().hex[:8]}_{filename}"
+    with zipfile.ZipFile(upload_path, "w") as archive:
+        for page in pages:
+            # the path inside the folder (subfolders kept), never outside the archive
+            parts = [p for p in Path(page.filename).parts[1:] if p not in ("", ".", "..")]
+            archive.writestr("/".join(parts) or Path(page.filename).name, page.file.read())
+    return await _register(upload_path, filename, db)
+
+
+async def _register(upload_path: Path, filename: str, db: AsyncSession) -> Book:
+    """A book (and its chapters) for a file just written to the uploads folder."""
+    suffix = upload_path.suffix.lower()
     try:
         doc = open_document(upload_path)
         info, units = doc.info(), doc.units
@@ -72,12 +98,13 @@ async def upload_book(file: UploadFile = File(...), db: AsyncSession = Depends(g
         raise HTTPException(400, f"Invalid {suffix[1:].upper()} file: {e}")
 
     book = Book(
-        filename=Path(file.filename).name,
+        filename=filename,
         original_path=str(upload_path),
         source_language=info.get("language") or "english",
         target_language="italian",
         status=BookStatus.uploaded,
         total_chapters=len(units),
+        manga=isinstance(doc, MangaDocument),
     )
     db.add(book)
     await db.commit()
@@ -120,6 +147,7 @@ async def delete_book(book_id: int, db: AsyncSession = Depends(get_db)):
     for path in files:
         if path.resolve().is_relative_to(settings.data_dir.resolve()):  # only our own files
             path.unlink(missing_ok=True)
+            shutil.rmtree(cache_dir(path), ignore_errors=True)  # manga: the pages read
     jobs.events.recent.pop(book_id, None)
     return {"status": "deleted"}
 
@@ -179,7 +207,36 @@ async def get_preview(book_id: int, chapter_index: int = 0, db: AsyncSession = D
         "original_text": doc.text(chapter_index),
         "translated_text": translated_text,
         "original_html": doc.render(chapter_index, None) or "",
+        "images": isinstance(doc, MangaDocument),  # a manga page: see page_image
     }
+
+
+@router.get("/books/{book_id}/pages/{index}.png")
+async def page_image(
+    book_id: int, index: int, translated: bool = False, db: AsyncSession = Depends(get_db)
+):
+    """A manga page as an image: the original, or lettered with the translations so far."""
+    book = await db.get(Book, book_id)
+    if not book:
+        raise HTTPException(404, "Book not found")
+    doc = open_document(book.original_path)
+    if not isinstance(doc, MangaDocument):
+        raise HTTPException(400, "Only manga books have page images")
+    if not 0 <= index < len(doc.units):
+        raise HTTPException(400, "Page index out of range")
+    image = None
+    if translated:
+        chapter = (
+            await db.execute(
+                select(Chapter).where(Chapter.book_id == book_id, Chapter.order_index == index)
+            )
+        ).scalar_one_or_none()
+        if chapter and chapter.block_translations:
+            image = await asyncio.to_thread(doc.page, index, chapter.block_translations)
+    if image:
+        return Response(image, media_type="image/png")
+    kind = mimetypes.guess_type(doc.pages[index])[0] or "image/png"
+    return Response(doc.image(index), media_type=kind)
 
 
 @router.get("/books/{book_id}/bookmarks")
@@ -295,13 +352,15 @@ async def estimate_cost(
 
     # the profile depends on the chunk size: cached for the last size asked
     cached = book.token_profile or {}
-    if cached.get("chunk_tokens") != chunk_tokens:
+    doc = open_document(book.original_path)
+    unread = doc.unread() if isinstance(doc, MangaDocument) else 0  # no text before the OCR
+    if cached.get("chunk_tokens") != chunk_tokens or unread:
         chunker = make_chunker(chunk_tokens)
-        profile = await asyncio.to_thread(
-            lambda: profile_document(open_document(book.original_path), chunker)
-        )
-        book.token_profile = cached = {**asdict(profile), "chunk_tokens": chunk_tokens}
-        await db.commit()
+        profile = await asyncio.to_thread(profile_document, doc, chunker)
+        cached = {**asdict(profile), "chunk_tokens": chunk_tokens}
+        if not unread:  # a manga's profile is final only once every page is read
+            book.token_profile = cached
+            await db.commit()
     profile = TokenProfile(**{k: v for k, v in cached.items() if k != "chunk_tokens"})
     language = target_language or book.target_language
     prices = await get_prices(force_refresh=refresh_prices)
@@ -328,9 +387,12 @@ async def estimate_cost(
                     reasoning=False,
                 )
         if price is None:
-            return estimate(profile, prices, language, {})
+            return {**estimate(profile, prices, language, {}), "unread_pages": unread}
         single = PriceTable({model: price}, prices.fetched_at, prices.source)
-        return estimate(profile, single, language, {price.provider: [model]})
+        return {
+            **estimate(profile, single, language, {price.provider: [model]}),
+            "unread_pages": unread,
+        }
 
     # config.yaml pricing.models (it replaces the built-in list, so it can drop a vendor),
     # plus the default models of configured providers
@@ -340,7 +402,7 @@ async def estimate_cost(
     for provider in providers.scalars():
         if provider.provider_type in models and provider.default_model:
             models[provider.provider_type].append(provider.default_model)
-    return estimate(profile, prices, language, models)
+    return {**estimate(profile, prices, language, models), "unread_pages": unread}
 
 
 @router.get("/books/{book_id}/download")
@@ -359,5 +421,7 @@ async def download_book(book_id: int, db: AsyncSession = Depends(get_db)):
     return FileResponse(
         path=str(path),
         filename=f"translated_{book.filename}",
-        media_type="application/pdf" if path.suffix == ".pdf" else "application/epub+zip",
+        media_type={".pdf": "application/pdf", ".cbz": MangaDocument.media_type}.get(
+            path.suffix, "application/epub+zip"
+        ),
     )

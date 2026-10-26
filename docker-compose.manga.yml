@@ -1,0 +1,22 @@
+# Manga mode override: the GPU service with the detection models (ml/), on an NVIDIA GPU.
+#   docker compose -f docker-compose.yml -f docker-compose.dev.yml -f docker-compose.manga.yml up --build
+services:
+  ml:
+    build: ./ml
+    volumes:
+      - ml_models:/models
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    restart: unless-stopped
+
+  backend:
+    environment:
+      - TRANSLATIO_MANGA_ML_URL=http://ml:8100
+
+volumes:
+  ml_models:

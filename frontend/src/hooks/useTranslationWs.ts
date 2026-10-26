@@ -15,6 +15,8 @@ interface TranslateOptions {
   /** Discard saved progress instead of resuming from it. */
   restart?: boolean;
   features?: Features;
+  /** manga: vision model reading the pages ("" = local OCR) */
+  ocrModel?: string;
 }
 
 const MAX_EVENTS = 500;
@@ -71,6 +73,7 @@ export function useTranslationWs(onFinished?: () => void) {
         restart: options.restart ?? false,
         enable_review: options.enableReview ?? true,
         review_model: options.reviewModel || undefined,
+        ocr_model: options.ocrModel || "",
         ...options.features,
       });
     },

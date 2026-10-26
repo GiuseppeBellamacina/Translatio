@@ -1,14 +1,16 @@
 # Translatio
 
-Translate whole books — EPUB and PDF — with LLMs, keeping the original format and layout.
-Only the language changes. A per-book glossary and compendium keep names, terms and the
-gender of every character consistent from the first page to the last.
+Translate whole books (EPUB and PDF) and manga or comics (CBZ, folders of pages, scanned PDFs)
+with LLMs, keeping the original format and layout. Only the language changes. A per-book glossary
+and compendium keep names, terms and the gender of every character consistent from the first page
+to the last. Manga pages are read with text detection and OCR, then the original lettering is
+erased and the translation lettered into each bubble.
 
 ![Translating a book: progress, queue, live original/translation and activity](docs/screenshots/translate-running.png)
 
 ## Features
 
-- **Same format, same layout**: EPUB in → EPUB out, PDF in → PDF out. Structure, images, inline formatting and page layout are kept; PDF text is re-typeset in place with metric-compatible fonts (subset, so the file stays the size of the original).
+- **Same format, same layout**: EPUB in → EPUB out, PDF in → PDF out, CBZ in → CBZ out. Structure, images, inline formatting and page layout are kept; PDF text is re-typeset in place with metric-compatible fonts (subset, so the file stays the size of the original).
 - **Or continuous text (PDF)**: with the *Continuous text* switch the translated PDF is laid out again as one flow at the book's own size — no half-empty pages before an illustration, chapters on a new page, illustrations right after the page where the text reaches them, footers, outline and contents links renumbered. The page count may change. `scripts/reflow_pdf.py` does the same for PDFs already translated.
 - **Agentic pipeline on LangGraph**: analysis → per chunk *context → translate → review → learn → finalize* → doubt review ([diagram below](#how-a-chapter-is-translated)). A reviewer flags only major issues and the chunk is retranslated with them.
 - **Glossary**: built while translating, enforced; near-duplicates (*Demon Kings* / *Demon King*, *Kingdom of Asura* / *Asura Kingdom*, spelling variants) are recognised and never added twice. Each prompt gets only the terms its passage uses (plurals and possessives included), the passage's own first.
@@ -23,6 +25,7 @@ gender of every character consistent from the first page to the last.
 - **Live view**: progress, ETA, cost so far, the current passage side by side and a filterable activity log.
 - **Cost estimate** per model before you start, from the book's real chunks and daily-updated prices.
 - **Providers**: OpenAI, Anthropic, OpenRouter, Ollama, any OpenAI-compatible endpoint; models listed live from each provider; rate limits, retries with backoff and per-provider concurrency.
+- **Manga and comics** (optional GPU service): CBZ/ZIP chapters and scanned PDFs are read with text detection and OCR, translated by the same pipeline, then the original lettering is erased and the translation lettered into each bubble ([Manga mode](#manga-mode)).
 - **Runs in Docker**: nothing to install on the host but Docker.
 
 ## How a chapter is translated
@@ -78,9 +81,41 @@ Only Docker is required: development, tests and linting all run in containers.
 
 All data — uploads, translated files and the SQLite database — lives in the repo-root `data/` folder.
 
+## Manga mode
+
+Manga chapters (`.cbz`/`.zip` of page images) and scanned PDFs (no text layer) are translated through the same pipeline as books — analysis, glossary, compendium, review, doubts — with one unit per page and one block per text region:
+
+1. **Read** (once per page, cached next to the upload):
+   - **Detection**: text and speech bubbles are found by [comic-text-and-bubble-detector](https://huggingface.co/ogkalu/comic-text-and-bubble-detector).
+   - **Order**: regions are read panel by panel, right to left as printed manga are in every language.
+   - **OCR**: by a vision model on the run's provider, or by a local OCR.
+   - **Sound effects**: drawn ones are never picked up, and lettered ones marked by the vision OCR are left alone.
+2. **Erase**:
+   - in plain bubbles and caption boxes the lettering is filled with the background colour;
+   - text over the artwork is inpainted with [LaMa](https://github.com/advimman/lama).
+3. **Letter**:
+   - the translation goes in each bubble's inscribed area, in Comic Neue (SIL OFL), at the original size or smaller so it fits, centred;
+   - text over the artwork gets a white outline.
+
+The output has the input's format: CBZ in → CBZ out, scanned PDF in → PDF out. The preview shows the original and translated pages side by side.
+
+It needs an NVIDIA GPU (Docker with GPU support) for the detection, OCR and inpainting service in `ml/`:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.dev.yml -f docker-compose.manga.yml up --build
+```
+
+The models are downloaded on first use into the `ml_models` volume (about 1.5 GB with every OCR engine).
+
+On the translate page of a manga, pick the **OCR model**:
+- **a vision model** on the same provider (accurate, about $0.001 a page on a cheap model);
+- **empty**, for the free local OCR (fast, but more reading errors).
+
+Measured results are in [docs/manga-eval.md](docs/manga-eval.md); the design is in [docs/manga-plan.md](docs/manga-plan.md).
+
 ## Usage
 
-1. **Upload** one or more EPUB/PDF files. A single book shows its cost estimate per model.
+1. **Upload** one or more EPUB/PDF files, or manga chapters as CBZ/ZIP or as a folder of page images (see [Manga mode](#manga-mode)). A single book shows its cost estimate per model.
 2. **Translate**: pick provider, model, optional reviewer model, languages and style, then start — or **Queue N books** to translate several in a row.
 3. **Follow** the progress live; edit the glossary and the compendium whenever the translation is paused. You can close the page: the job runs on the server.
 4. **Preview** original and translation side by side, then **Download** the translated file.

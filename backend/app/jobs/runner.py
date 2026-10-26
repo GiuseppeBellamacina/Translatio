@@ -21,6 +21,7 @@ from app.knowledge.store import KnowledgeRegistry
 from app.services.chunker import make_chunker
 from app.services.documents import open_document
 from app.services.job_store import JobStore
+from app.services.manga import ocr, vision
 from app.services.translation_service import translate_document
 
 
@@ -92,6 +93,21 @@ class JobRunner:
             review_llm = create_llm(review_config)
             review_llm.rate_limiter = llm.rate_limiter
         doc = open_document(book.original_path)
+        source = config.source_language or book.source_language or "english"
+        if config.ocr_model:  # manga pages read by a vision model, at the provider's pace
+            ocr_config = copy.copy(llm_config)
+            ocr_config.model = config.ocr_model
+            ocr_llm = create_llm(ocr_config)
+            ocr_llm.rate_limiter = llm.rate_limiter
+
+            async def reader(image: bytes, boxes: list) -> list[str]:
+                return await vision.read(image, boxes, ocr_llm)
+
+        else:
+
+            async def reader(image: bytes, boxes: list) -> list[str]:
+                code = ocr.LANGUAGE_CODES.get(source.lower(), "en")
+                return await ocr.read(image, boxes, "easyocr", code)
 
         self.events.reset_log(book_id)
         store = JobStore(book_id)
@@ -113,7 +129,7 @@ class JobRunner:
             glossaries, compendiums = held
             pipeline = TranslationPipeline(
                 llm=llm,
-                source_language=config.source_language or book.source_language or "english",
+                source_language=source,
                 target_language=config.target_language or book.target_language or "italian",
                 chunker=make_chunker(params.get("chunk_tokens", settings.chunk_tokens)),
                 max_retries=1,
@@ -162,6 +178,7 @@ class JobRunner:
                 analysis=resume.analysis,
                 bookmarks=resume.bookmarks,
                 reflow=config.reflow_pdf,
+                reader=reader,
                 max_concurrency=params.get("max_concurrency", settings.max_concurrency),
             ):
                 await store.handle(event)
@@ -183,7 +200,17 @@ class JobRunner:
                 }
         except Exception as e:
             error = str(e)
-            self.events.publish(book_id, {"event": "error", "message": f"Translation failed: {e}"})
+            if type(e).__name__ == "RateLimitError":  # out of quota (any SDK): resume it later
+                status = BookStatus.paused
+                final_message = {
+                    "event": "cancelled",
+                    "message": "Translation paused: the provider's rate limit or quota is "
+                    f"exhausted, resume it later ({e})",
+                }
+            else:
+                self.events.publish(
+                    book_id, {"event": "error", "message": f"Translation failed: {e}"}
+                )
         finally:
             for knowledge_store in held:
                 self.knowledge.release(knowledge_store)

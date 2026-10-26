@@ -1,0 +1,233 @@
+"""Score a manga text detector (and its OCR) on pages with hand-checked ground truth.
+
+    docker compose -f docker-compose.yml -f docker-compose.dev.yml -f docker-compose.manga.yml \
+        run --rm backend python scripts/manga_eval.py /data/manga-test/en/spy-x-family-1
+
+Each page image (png, jpg, webp) has a ``<page>.json`` next to it:
+``{"boxes": [{"box": [x0, y0, x1, y1], "kind": "dialogue|caption|sfx", "text": "..."}]}``
+in image pixels and reading order (app/services/manga/metrics.py). ``--bootstrap`` drafts that
+file for the pages that have none (every region, SFX labelled) and draws it in
+``check/<page>.png`` (numbered; blue dialogue, green captions, red SFX), to correct by hand;
+those pages are not scored.
+"""
+
+import argparse
+import asyncio
+import json
+import re
+import sys
+import time
+from collections import Counter
+from collections.abc import Awaitable, Callable
+from pathlib import Path
+
+import pymupdf
+from langchain_core.callbacks import UsageMetadataCallbackHandler
+from langchain_core.language_models import BaseChatModel
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from app.core.bootstrap import load_config, load_keys, resolve_providers  # noqa: E402
+from app.core.llm_factory import LLMConfig, create_llm  # noqa: E402
+from app.services.manga.detect import TEXT_LABELS  # noqa: E402
+from app.services.manga.detect import detect as ml_detect  # noqa: E402
+from app.services.manga.metrics import SFX, rates, score_page  # noqa: E402
+from app.services.manga.ocr import ENGINES, is_sfx, read  # noqa: E402
+from app.services.manga.panels import panels  # noqa: E402
+from app.services.manga.regions import regions, text_regions  # noqa: E402
+from app.services.manga.vision import read as vision_read  # noqa: E402
+from app.services.model_catalog import price_for  # noqa: E402
+from app.services.pricing import get_prices  # noqa: E402
+
+IMAGES = {".png", ".jpg", ".jpeg", ".webp"}
+Detector = Callable[[Path], Awaitable[list[dict]]]
+right_to_left = True  # manga in any language; --ltr for western comics
+COLOURS = {"dialogue": (0, 0.4, 1), "caption": (0, 0.6, 0), SFX: (0.9, 0, 0)}
+
+
+async def _truth(image: Path) -> list[dict]:
+    """The ground truth without SFX: checks that the files load (it scores 100%)."""
+    boxes = json.loads(image.with_suffix(".json").read_text(encoding="utf-8"))["boxes"]
+    return [b for b in boxes if b["kind"] != SFX]
+
+
+async def _ml(image: Path) -> list[dict]:
+    """The GPU detector's text boxes (in bubbles and free), SFX included."""
+    return [r for r in await ml_detect(image.read_bytes()) if r["label"] in TEXT_LABELS]
+
+
+async def _regions(image: Path) -> list[dict]:
+    """Text regions in reading order without SFX."""
+    data = image.read_bytes()
+    detected = await ml_detect(data)
+    found = panels(data, [d["box"] for d in detected], right_to_left)
+    return text_regions(detected, right_to_left, found)
+
+
+async def _all_regions(image: Path) -> list[dict]:
+    """Every region in reading order, SFX labelled: the drafts of `--bootstrap`."""
+    data = image.read_bytes()
+    detected = await ml_detect(data)
+    return regions(
+        detected, right_to_left, panels(data, [d["box"] for d in detected], right_to_left)
+    )
+
+
+DETECTORS: dict[str, Detector] = {"truth": _truth, "ml": _ml, "regions": _regions}
+
+
+def check_image(image: Path, boxes: list[dict]) -> Path:
+    """The page with its boxes numbered in reading order and coloured by kind, in ``check/``."""
+    size = pymupdf.Pixmap(str(image))
+    doc = pymupdf.open()
+    page = doc.new_page(width=size.width, height=size.height)
+    page.insert_image(page.rect, filename=str(image))
+    for n, b in enumerate(boxes, 1):
+        colour = COLOURS.get(b["kind"], (0.5, 0, 0.5))
+        page.draw_rect(b["box"], color=colour, width=3)
+        corner = (b["box"][0], b["box"][1] - 5 if b["box"][1] > 30 else b["box"][3] + 25)
+        page.insert_text(corner, str(n), fontsize=26, fontname="hebo", color=colour)
+    out = image.parent / "check" / f"{image.stem}.png"
+    out.parent.mkdir(exist_ok=True)
+    page.get_pixmap(dpi=72).save(out)
+    return out
+
+
+def _natural(path: Path) -> list:
+    return [int(t) if t.isdigit() else t for t in re.split(r"(\d+)", path.name)]
+
+
+def _pages(folder: Path) -> list[Path]:
+    return sorted((p for p in folder.iterdir() if p.suffix.lower() in IMAGES), key=_natural)
+
+
+async def evaluate(
+    folder: Path, detect: Detector, draft: Detector | None = None
+) -> tuple[list[tuple[str, Counter]], Counter]:
+    """Counts per scored page (with the detector's milliseconds) and their total.
+
+    Pages without ground truth are not scored; with ``draft`` they get one to correct by hand.
+    """
+    rows, total = [], Counter()
+    for image in _pages(folder):
+        truth = image.with_suffix(".json")
+        if not truth.exists():
+            if draft:
+                boxes = [
+                    {"box": r["box"], "kind": r["kind"], "text": r.get("text", "")}
+                    for r in await draft(image)
+                ]
+                truth.write_text(
+                    json.dumps({"boxes": boxes}, indent=2, ensure_ascii=False), "utf-8"
+                )
+                check_image(image, boxes)
+            continue
+        start = time.perf_counter()
+        pred = await detect(image)
+        ms = round((time.perf_counter() - start) * 1000)
+        counts = score_page(pred, json.loads(truth.read_text(encoding="utf-8"))["boxes"])
+        counts["ms"] = ms
+        rows.append((image.name, counts))
+        total += counts
+    return rows, total
+
+
+def _line(name: str, counts: Counter, pages: int = 1) -> str:
+    r = rates(counts)
+    cells = [f"{r[k]:.2f}" if r[k] is not None else "-" for k in r]
+    ms = counts["ms"] / pages
+    return (
+        f"{name:<28} {counts['pred']:>5} {counts['truth']:>5} {counts['hits']:>5} "
+        + " ".join(f"{c:>6}" for c in cells)
+        + f" {ms:>7.0f}"
+    )
+
+
+def _vision(spec: str) -> tuple[BaseChatModel, str]:
+    """The chat model of ``llm:PROVIDER:MODEL`` from config.yaml and .env, and its type."""
+    _, name, model = spec.split(":", 2)
+    providers = {p["name"]: p for p in resolve_providers(load_config(), load_keys())}
+    if name not in providers:
+        raise SystemExit(f"provider {name!r} not configured: {', '.join(providers)}")
+    provider = providers[name]
+    config = LLMConfig(
+        provider=provider["type"],
+        model=model,
+        api_key=provider["api_key"],
+        base_url=provider.get("base_url"),
+        structured_output_method=(provider.get("params") or {}).get("structured_output_method"),
+    )
+    return create_llm(config), provider["type"]
+
+
+async def _run(args: argparse.Namespace) -> tuple[list, Counter, tuple | None]:
+    """Scores, and for a vision LLM its token usage and cost."""
+    detect, usage, ocr = DETECTORS[args.detector], UsageMetadataCallbackHandler(), None
+    if args.ocr and args.ocr.startswith("llm:"):
+        llm, provider_type = _vision(args.ocr)
+        llm.callbacks = [usage]
+        ocr = lambda data, boxes: vision_read(data, boxes, llm)  # noqa: E731
+    elif args.ocr:
+        ocr = lambda data, boxes: read(data, boxes, args.ocr, args.lang)  # noqa: E731
+
+    async def with_text(image: Path) -> list[dict]:
+        found = await detect(image)
+        texts = await ocr(image.read_bytes(), [r["box"] for r in found])
+        pairs = zip(found, texts, strict=True)
+        return [{**r, "text": t} for r, t in pairs if not is_sfx(t)]  # as manga reading does
+
+    draft = _all_regions if args.bootstrap else None
+    rows, total = await evaluate(args.folder, with_text if ocr else detect, draft)
+    if not usage.usage_metadata:
+        return rows, total, None
+    model = args.ocr.split(":", 2)[2]
+    spent = Counter()
+    for used in usage.usage_metadata.values():
+        spent.update(input_tokens=used["input_tokens"], output_tokens=used["output_tokens"])
+    price = price_for(provider_type, model, await get_prices())
+    dollars = (
+        spent["input_tokens"] * price.input_per_token
+        + spent["output_tokens"] * price.output_per_token
+        if price
+        else 0.0
+    )
+    return rows, total, (f"{spent['input_tokens']} in / {spent['output_tokens']} out", dollars)
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(
+        description="Score a manga text detector on pages with ground truth."
+    )
+    parser.add_argument("folder", type=Path)
+    parser.add_argument("--detector", choices=DETECTORS, default="regions")
+    parser.add_argument(
+        "--bootstrap", action="store_true", help="draft missing ground truth, SFX included"
+    )
+    parser.add_argument("--ltr", action="store_true", help="read left to right (western comics)")
+    parser.add_argument(
+        "--ocr",
+        help=f"read the regions, to score the CER: {', '.join(ENGINES)} or llm:PROVIDER:MODEL",
+    )
+    parser.add_argument("--lang", default="en", help="source language code for the OCR")
+    args = parser.parse_args()
+    if args.ocr and args.ocr not in ENGINES and not args.ocr.startswith("llm:"):
+        parser.error(f"unknown OCR {args.ocr!r}")
+    global right_to_left
+    right_to_left = not args.ltr
+    rows, total, cost = asyncio.run(_run(args))
+    print(
+        f"{'page':<28} {'pred':>5} {'truth':>5} {'hits':>5} {'prec':>6} {'recall':>6} "
+        f"{'sfx':>6} {'cer':>6} {'order':>6} {'ms/page':>7}"
+    )
+    for name, counts in rows:
+        print(_line(name, counts))
+    if rows:
+        print(_line(f"TOTAL ({len(rows)} pages)", total, len(rows)))
+    if cost:
+        tokens, dollars = cost
+        print(
+            f"OCR tokens {tokens}; ${dollars:.4f} in all, ${dollars / max(len(rows), 1):.5f}/page"
+        )
+
+
+if __name__ == "__main__":
+    main()
