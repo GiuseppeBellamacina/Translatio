@@ -64,7 +64,7 @@ Check each model's licence before bundling it.
    - **Script**: `scripts/manga_eval.py` reports, per engine, detection precision/recall (IoU ≥ 0.5), SFX false-include rate, OCR CER/NLS, seconds per page and cost per page.
 3. **Detection.**
    - **Service**: the ML service with comic-text-and-bubble-detector (and Magi v2 as the comparison).
-   - **Output**: boxes, bubble masks, kind and reading order (right-to-left for JP, left-to-right for EN), with SFX filtering.
+   - **Output**: boxes, bubble masks, kind and reading order (right to left for manga in any language, as published editions keep the layout; left to right for western comics), with SFX filtering.
    - **Gate**: evaluate before picking the default.
 4. **OCR engines behind one interface** (`ocr(image_crop, lang) -> text`):
    - local: manga-ocr (JP), PaddleOCR / PaddleOCR-VL (JP + EN), Surya (EN);
