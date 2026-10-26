@@ -15,6 +15,7 @@ export function RunSettingsFields({
   onChange,
   disabled,
   sourceAuto,
+  manga,
 }: {
   providers: Provider[];
   value: RunSettings;
@@ -22,8 +23,10 @@ export function RunSettingsFields({
   disabled?: boolean;
   /** offer "each book's own" as the source language (queue of several books) */
   sourceAuto?: boolean;
+  /** some book is a manga: offer the OCR model */
+  manga?: boolean;
 }) {
-  const { providerId, model, enableReview, reviewModel, sourceLang, targetLang, style, features } = value;
+  const { providerId, model, enableReview, reviewModel, sourceLang, targetLang, style, ocrModel, features } = value;
   const changed = FEATURES.filter((f) => features[f.key] !== featureDefault(f)).length;
   const provider = providers.find((p) => p.id === providerId) ?? null;
   const loadModels = useCallback(
@@ -97,6 +100,26 @@ export function RunSettingsFields({
               <p className="m-0 text-xs text-faint">Faster and cheaper; no second opinion on each chunk.</p>
             )}
           </div>
+
+          {manga && (
+            <div className="flex flex-col gap-1.5">
+              <span className="text-sm font-medium">OCR model (manga)</span>
+              <ModelCombobox
+                key={`ocr-${providerId}`}
+                label="OCR model"
+                load={loadModels}
+                loadKey={`ocr-${providerId}`}
+                value={ocrModel}
+                onChange={(m) => onChange({ ocrModel: m })}
+                autoSelect={false}
+                emptyLabel="Local OCR (free, less accurate)"
+                providerType={provider?.provider_type}
+                baseUrl={provider?.base_url}
+                hint="A vision model reads the pages once; it reads lettering far better than the local OCR"
+                disabled={disabled}
+              />
+            </div>
+          )}
         </>
       )}
 

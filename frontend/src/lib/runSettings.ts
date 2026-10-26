@@ -23,6 +23,8 @@ export interface RunSettings {
   sourceLang: string;
   targetLang: string;
   style: string;
+  /** manga: vision model reading the pages ("" = local OCR) */
+  ocrModel: string;
   features: Features;
 }
 
@@ -41,6 +43,7 @@ export function settingsFrom(
     sourceLang: languageName(known?.source_language ?? languages.source, "english"),
     targetLang: languageName(known?.target_language ?? languages.target, "italian"),
     style: known?.style_instructions ?? "",
+    ocrModel: known?.ocr_model ?? "",
     features: Object.fromEntries(FEATURES.map((f) => [f.key, known?.[f.key] ?? featureDefault(f)])) as Features,
   };
 }
@@ -55,6 +58,7 @@ export function toRunConfig(s: RunSettings): RunConfig {
     source_language: s.sourceLang || null, // "": each book's own
     target_language: s.targetLang,
     style_instructions: s.style,
+    ocr_model: s.ocrModel,
     ...s.features,
   };
 }

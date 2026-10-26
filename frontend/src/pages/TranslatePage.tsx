@@ -140,8 +140,9 @@ export function TranslatePage() {
   }
 
   const isPdf = book.filename.toLowerCase().endsWith(".pdf");
-  const unitName = isPdf ? "pages" : "chapters";
-  const unitAbbr = isPdf ? "p." : "ch.";
+  const isManga = !!book.manga;
+  const unitName = isPdf || isManga ? "pages" : "chapters";
+  const unitAbbr = isPdf || isManga ? "p." : "ch.";
   const done = progress?.completed_units ?? book.translated_chapters;
   const isCompleted = book.status === "completed";
   const openDoubts = bookmarks.filter((b) => b.status === "open").length;
@@ -165,14 +166,15 @@ export function TranslatePage() {
       reviewModel: enableReview ? reviewModel : undefined,
       restart,
       features: settings.features,
+      ocrModel: isManga ? settings.ocrModel : "",
     });
   };
 
   return (
     <Page
       wide
-      eyebrow={`${isPdf ? "PDF" : "EPUB"} · ${book.total_chapters} ${unitName} · ${sourceLang} to ${targetLang}`}
-      title={book.filename.replace(/\.(epub|pdf)$/i, "")}
+      eyebrow={`${isManga ? "Manga" : isPdf ? "PDF" : "EPUB"} · ${book.total_chapters} ${unitName} · ${sourceLang} to ${targetLang}`}
+      title={book.filename.replace(/\.(epub|pdf|cbz|zip)$/i, "")}
       actions={
         <>
           <StatusPill status={running ? "translating" : book.status} />
@@ -227,6 +229,7 @@ export function TranslatePage() {
             value={settings}
             onChange={(patch) => setSettings((s) => ({ ...s, ...patch }))}
             disabled={running}
+            manga={isManga}
           />
 
           <div className="grid grid-cols-2 gap-3">
@@ -261,8 +264,10 @@ export function TranslatePage() {
         <div className="flex min-w-0 flex-[999_1_560px] flex-col gap-5">
           <ProgressPanel progress={progress} unitName={unitName} unitAbbr={unitAbbr} spent={spent} />
           {progress?.queue && <QueueProgress items={progress.queue.items} bookId={id} />}
-          <LiveView chunks={chunks} unitName={isPdf ? "Page" : "Chapter"} targetLanguage={targetLang} />
-          {bookmarks.length > 0 && <DoubtsPanel bookmarks={bookmarks} unitName={isPdf ? "Page" : "Chapter"} />}
+          <LiveView chunks={chunks} unitName={isPdf || isManga ? "Page" : "Chapter"} targetLanguage={targetLang} />
+          {bookmarks.length > 0 && (
+            <DoubtsPanel bookmarks={bookmarks} unitName={isPdf || isManga ? "Page" : "Chapter"} />
+          )}
           <ActivityLog events={events} unitAbbr={unitAbbr} />
         </div>
       </div>
