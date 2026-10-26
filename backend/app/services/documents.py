@@ -64,6 +64,11 @@ class Document(ABC):
     def info(self) -> dict:
         """Metadata: ``title`` and ``language`` (best effort)."""
 
+    def fit_doubts(self, index: int, translations: list[str | None] | None) -> list[dict]:
+        """Doubts about the layout of a unit's translations (``block``, ``quote``,
+        ``reason``): a manga flags text too long for its bubble. Text formats have none."""
+        return []
+
     async def prepare(self, reader: Any, cancelled: asyncio.Event) -> AsyncIterator[Any]:
         """Work before the translation, yielding progress events (manga: reading the pages
         with ``reader``, the run's OCR). Text formats have none."""

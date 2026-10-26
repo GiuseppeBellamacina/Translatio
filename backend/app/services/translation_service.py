@@ -393,6 +393,11 @@ async def translate_document(
     if pipeline._cancelled:
         return
 
+    # translations that do not fit their place (a manga bubble) are doubts to shorten
+    for unit in sorted(results):
+        if found := doc.fit_doubts(unit, results[unit]):
+            yield remember(flagged(unit, found))
+
     # Phase 3: doubt review, in rounds: bookmarks added meanwhile (an edit in the UI while
     # this runs) join the next round
     touched: set[int] = set()

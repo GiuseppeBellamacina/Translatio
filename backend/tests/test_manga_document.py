@@ -11,7 +11,7 @@ import pymupdf
 
 from app.agents.pipeline import TranslationPipeline
 from app.core.config import settings
-from app.models.schemas import TranslationResult
+from app.models.schemas import DoubtResolution, TranslationResult
 from app.services.documents import open_document
 from app.services.manga import document
 from app.services.manga.erase import erase
@@ -189,3 +189,19 @@ def test_a_folder_of_pages_is_uploaded_as_a_cbz(tmp_path, db):
             "select original_path from books where id = ?", (book["id"],)
         ).fetchone()
     assert open_document(upload).pages == ["escape.png", "p1.png", "p2.png"]
+
+
+async def test_text_too_long_for_its_bubble_goes_to_the_doubt_review(tmp_path, monkeypatch):
+    path, _, reader = _chapter(tmp_path, monkeypatch, pages=1)
+    monkeypatch.setattr(document, "fits", lambda region, text: region["text"] != "Meanwhile...")
+    llm = ScriptedLLM()
+    llm.handlers[DoubtResolution] = lambda text, call: DoubtResolution(translation="Later...")
+    events = await translate(
+        path, TranslationPipeline(llm=llm, enable_review=False), tmp_path / "out.cbz", reader=reader
+    )
+    flagged = [e for e in events if e.event_type == "doubt_flagged"]
+    assert [d["block"] for e in flagged for d in e.data["doubts"]] == [2]
+    assert "speech bubble" in flagged[0].data["doubts"][0]["reason"]
+    assert len(llm.calls_for(DoubtResolution)) == 1  # shortened by the doubt review
+    saved = [e for e in events if e.event_type == "chapter_saved"][-1]
+    assert saved.data["translations"][2] == "Later..."
