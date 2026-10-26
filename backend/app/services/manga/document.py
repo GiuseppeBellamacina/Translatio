@@ -22,6 +22,7 @@ from app.services.manga.detect import detect
 from app.services.manga.erase import erase
 from app.services.manga.panels import panels
 from app.services.manga.regions import text_regions
+from app.services.manga.typeset import letter
 
 IMAGES = {".png", ".jpg", ".jpeg", ".webp"}
 Reader = Callable[[bytes, list[list[float]]], Awaitable[list[str]]]  # page, boxes → texts
@@ -45,26 +46,18 @@ def cache_dir(path: Path) -> Path:
 def _typeset(
     image: bytes, regions: list[dict], translations: list[str | None], erased: bool
 ) -> bytes:
-    """The page with each translated region's text written in its box.
-
-    shortcut: the translation is fitted in the original text box (proper typesetting is epic
-    item 7); a page not erased gets a white box under it.
-    """
+    """The page with each translated region lettered (typeset.py); a page whose lettering
+    could not be erased gets a white box under each text."""
     pix = pymupdf.Pixmap(image)
-    page = pymupdf.open().new_page(width=pix.width, height=pix.height)
+    doc = pymupdf.open()
+    page = doc.new_page(width=pix.width, height=pix.height)
     page.insert_image(page.rect, stream=image)
     for region, text in zip(regions, translations, strict=True):
         if text is None:
             continue
-        box = pymupdf.Rect(region["box"]) + (-3, -3, 3, 3)
         if not erased:
-            page.draw_rect(box, color=None, fill=(1, 1, 1))
-        page.insert_htmlbox(
-            box,
-            f'<p style="text-align:center;font-family:sans-serif;font-weight:bold;'
-            f'margin:0">{html.escape(text)}</p>',
-            scale_low=0,
-        )
+            page.draw_rect(pymupdf.Rect(region["box"]) + (-3, -3, 3, 3), color=None, fill=(1, 1, 1))
+        letter(page, region, text)
     return page.get_pixmap(dpi=72).tobytes("png")
 
 
