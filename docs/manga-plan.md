@@ -19,9 +19,11 @@ Translatio translates text-layer EPUB/PDF. The user wants a **manga mode**:
 - a new long-lived branch `manga` from `main`;
 - the plan committed there as `docs/manga-plan.md`.
 
-The implementation follows in later PRs targeting `manga`.
+The roadmap is tracked in epic #143: each item is a small issue with a feature branch from `manga`, merged into `manga` by a PR.
 
 ## Research summary
+All sources, with links and what we take from each: [manga-sources.md](manga-sources.md).
+
 | Stage | Local / free | Paid / API | Notes |
 | --- | --- | --- | --- |
 | Text + bubble detection | **comic-text-and-bubble-detector** (ogkalu, RT-DETR, ~11k manga/webtoon/comic images; separates bubbles from free text); **comic-text-detector** (used by manga-image-translator and BallonsTranslator; pixel text masks); **Magi v2** (Oxford, CVPR/ACCV 2024: text boxes, reading order, speaker links, keeps "dialogue-essential" text) | — | Magi's speaker links can feed the compendium (gender agreement) |
