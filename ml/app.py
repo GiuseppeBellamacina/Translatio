@@ -21,6 +21,7 @@ from transformers import RTDetrImageProcessor, RTDetrV2ForObjectDetection
 DETECTOR = "ogkalu/comic-text-and-bubble-detector"
 EASYOCR_LANGS = {"ja": ["ja", "en"], "it": ["it", "en"], "en": ["en"]}
 PAD = 4  # px around each box, so glyphs touching its edge are whole
+UPSCALE = 2  # lettering on web-size pages is small; enlarged crops read better
 device = "cuda" if torch.cuda.is_available() else "cpu"
 processor = RTDetrImageProcessor.from_pretrained(DETECTOR)
 model = RTDetrV2ForObjectDetection.from_pretrained(DETECTOR).to(device).eval()
@@ -102,5 +103,8 @@ def ocr(request: OcrRequest, engine: str, lang: str = "en") -> dict:
     for x0, y0, x1, y1 in request.boxes:
         area = (max(x0 - PAD, 0), max(y0 - PAD, 0), min(x1 + PAD, image.width), min(y1 + PAD, image.height))
         with torch.inference_mode():
-            texts.append("\n".join(read(image.crop(area))))
+            crop = image.crop(area)
+            if engine != "manga-ocr":  # it resizes to its own input size
+                crop = crop.resize((crop.width * UPSCALE, crop.height * UPSCALE), Image.LANCZOS)
+            texts.append("\n".join(read(crop)))
     return {"texts": texts}
