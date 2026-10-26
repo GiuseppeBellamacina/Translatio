@@ -38,4 +38,3 @@ Future work, most of it on manga mode. Where things stand: [docs/manga-plan.md](
 - [ ] **CPU-only machines**: the ML service falls back to CPU but was never tried there; measure it and document what to expect.
 - [ ] **README screenshots of manga mode**: the test chapter is copyrighted. Use pages with an open licence, or synthetic ones.
 - [ ] **Per-book reading direction**: manga are read right to left; add a switch for western comics (left to right), which today exists only as `--ltr` in the eval script.
-- [ ] **Delete the merged `manga` branch on GitHub**: `git push origin --delete manga`.
