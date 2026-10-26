@@ -31,7 +31,7 @@ from app.core.llm_factory import LLMConfig, create_llm  # noqa: E402
 from app.services.manga.detect import TEXT_LABELS  # noqa: E402
 from app.services.manga.detect import detect as ml_detect  # noqa: E402
 from app.services.manga.metrics import SFX, rates, score_page  # noqa: E402
-from app.services.manga.ocr import ENGINES, read  # noqa: E402
+from app.services.manga.ocr import ENGINES, is_sfx, read  # noqa: E402
 from app.services.manga.panels import panels  # noqa: E402
 from app.services.manga.regions import regions, text_regions  # noqa: E402
 from app.services.manga.vision import read as vision_read  # noqa: E402
@@ -172,7 +172,8 @@ async def _run(args: argparse.Namespace) -> tuple[list, Counter, tuple | None]:
     async def with_text(image: Path) -> list[dict]:
         found = await detect(image)
         texts = await ocr(image.read_bytes(), [r["box"] for r in found])
-        return [{**r, "text": t} for r, t in zip(found, texts, strict=True)]
+        pairs = zip(found, texts, strict=True)
+        return [{**r, "text": t} for r, t in pairs if not is_sfx(t)]  # as manga reading does
 
     draft = _all_regions if args.bootstrap else None
     rows, total = await evaluate(args.folder, with_text if ocr else detect, draft)

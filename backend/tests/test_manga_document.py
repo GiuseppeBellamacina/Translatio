@@ -42,7 +42,7 @@ def _chapter(tmp_path, monkeypatch, pages: int = 2):
 
     async def reader(image: bytes, boxes: list) -> list[str]:
         reads.append(len(boxes))
-        return TEXTS[: len(boxes) - 1] + [""]  # the last region reads empty: no block
+        return TEXTS[: len(boxes) - 1] + ["[BAM]"]  # the OCR marks the sound effect: no block
 
     return path, reads, reader
 
@@ -56,7 +56,7 @@ async def test_pages_are_read_once(tmp_path, monkeypatch):
     events = [e async for e in doc.prepare(reader, asyncio.Event())]
     assert [e.event_type for e in events] == ["page_read"] * 10 and reads == [4] * 10
     regions = doc.regions(0)
-    assert [r["text"] for r in regions] == TEXTS[:3]  # reading order, empty text dropped
+    assert [r["text"] for r in regions] == TEXTS[:3]  # reading order, the sound effect left out
     assert regions[0]["bubble"] is not None and regions[2]["bubble"] is None
 
     again = open_document(path)  # a resume: the cache answers
