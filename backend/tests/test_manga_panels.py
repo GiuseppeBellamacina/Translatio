@@ -3,6 +3,7 @@
 import pymupdf
 
 from app.services.manga.panels import panels
+from app.services.manga.regions import regions
 from scripts.make_sample_manga import sample_page
 
 # a tall panel on the right, two stacked panels on the left (gutters 10 px)
@@ -36,3 +37,14 @@ def test_a_bubble_across_a_gutter_is_painted_out():
     bubble = (60, 340, 260, 450)  # over the gutter between the two left panels
     assert len(panels(_page(bubble), [])) == 2  # the bubble joins them
     _near(panels(_page(bubble), [list(bubble)]), RIGHT, TOP_LEFT, BOTTOM_LEFT)
+
+
+def test_regions_are_read_panel_by_panel():
+    def text(*box):
+        return {"box": list(box), "label": "text_free", "score": 1}
+
+    # the row rule alone would read the top-left text before the lower right one
+    page = [text(100, 50, 200, 100), text(400, 300, 500, 350), text(100, 500, 200, 550)]
+    order = [r["box"][:2] for r in regions(page, panels=[RIGHT, TOP_LEFT, BOTTOM_LEFT])]
+    assert order == [[400, 300], [100, 50], [100, 500]]
+    assert [r["box"][:2] for r in regions(page)] == [[100, 50], [400, 300], [100, 500]]

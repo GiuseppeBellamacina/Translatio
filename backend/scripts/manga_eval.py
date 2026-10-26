@@ -27,6 +27,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from app.services.manga.detect import TEXT_LABELS  # noqa: E402
 from app.services.manga.detect import detect as ml_detect  # noqa: E402
 from app.services.manga.metrics import SFX, rates, score_page  # noqa: E402
+from app.services.manga.panels import panels  # noqa: E402
 from app.services.manga.regions import regions, text_regions  # noqa: E402
 
 IMAGES = {".png", ".jpg", ".jpeg", ".webp"}
@@ -48,13 +49,19 @@ async def _ml(image: Path) -> list[dict]:
 
 async def _regions(image: Path) -> list[dict]:
     """Text regions in reading order without SFX."""
-    detected = await ml_detect(image.read_bytes())
-    return text_regions(detected, right_to_left)
+    data = image.read_bytes()
+    detected = await ml_detect(data)
+    found = panels(data, [d["box"] for d in detected], right_to_left)
+    return text_regions(detected, right_to_left, found)
 
 
 async def _all_regions(image: Path) -> list[dict]:
     """Every region in reading order, SFX labelled: the drafts of `--bootstrap`."""
-    return regions(await ml_detect(image.read_bytes()), right_to_left)
+    data = image.read_bytes()
+    detected = await ml_detect(data)
+    return regions(
+        detected, right_to_left, panels(data, [d["box"] for d in detected], right_to_left)
+    )
 
 
 DETECTORS: dict[str, Detector] = {"truth": _truth, "ml": _ml, "regions": _regions}

@@ -57,7 +57,25 @@ def reading_order(found: list[dict], right_to_left: bool) -> list[dict]:
     ]
 
 
-def regions(detected: list[dict], right_to_left: bool = True) -> list[dict]:
+def _by_panel(found: list[dict], panels: list[list[float]], right_to_left: bool) -> list[dict]:
+    """Panel by panel (each region in the panel holding its centre, else the nearest one),
+    with the row rule inside each panel."""
+
+    def panel_of(r: dict) -> int:
+        box = r.get("bubble") or r["box"]
+        x, y = (box[0] + box[2]) / 2, (box[1] + box[3]) / 2
+        gap = lambda p: max(p[0] - x, 0, x - p[2]) + max(p[1] - y, 0, y - p[3])  # noqa: E731
+        return min(range(len(panels)), key=lambda i: gap(panels[i]))
+
+    groups: list[list[dict]] = [[] for _ in panels]
+    for r in found:
+        groups[panel_of(r)].append(r)
+    return [r for group in groups for r in reading_order(group, right_to_left)]
+
+
+def regions(
+    detected: list[dict], right_to_left: bool = True, panels: list[list[float]] | None = None
+) -> list[dict]:
     bubbles = [d["box"] for d in detected if d["label"] == "bubble"]
     texts = [d for d in detected if d["label"] != "bubble"]
     merged = _merged(texts)
@@ -70,9 +88,13 @@ def regions(detected: list[dict], right_to_left: bool = True) -> list[dict]:
             holder = None
         kind = "dialogue" if d["label"] == "text_bubble" else "caption"
         found.append({"box": d["box"], "kind": kind, "bubble": holder, "score": d["score"]})
+    if panels:
+        return _by_panel(found, panels, right_to_left)
     return reading_order(found, right_to_left)
 
 
-def text_regions(detected: list[dict], right_to_left: bool = True) -> list[dict]:
+def text_regions(
+    detected: list[dict], right_to_left: bool = True, panels: list[list[float]] | None = None
+) -> list[dict]:
     """The regions to translate, in reading order: sound effects are left alone."""
-    return [r for r in regions(detected, right_to_left) if r["kind"] != SFX]
+    return [r for r in regions(detected, right_to_left, panels) if r["kind"] != SFX]
