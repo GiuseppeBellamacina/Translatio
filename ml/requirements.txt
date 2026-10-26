@@ -2,3 +2,6 @@ fastapi==0.115.6
 uvicorn==0.34.0
 transformers==4.57.6
 pillow==11.1.0
+manga-ocr==0.1.16
+easyocr==1.7.2
+python-doctr==1.1.0
