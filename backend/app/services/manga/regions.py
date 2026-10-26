@@ -17,6 +17,24 @@ def _inside(inner: list[float], outer: list[float]) -> float:
     return w * h / area if w > 0 and h > 0 and area > 0 else 0.0
 
 
+def _area(box: list[float]) -> float:
+    return (box[2] - box[0]) * (box[3] - box[1])
+
+
+def _merged(texts: list[dict]) -> set[int]:
+    """Text boxes mostly made of other text boxes inside them: the detector merged those."""
+    dropped: set[int] = set()  # ids: duplicates compare equal
+    for t in sorted(texts, key=lambda t: _area(t["box"]), reverse=True):
+        inside = [
+            o["box"]
+            for o in texts
+            if o is not t and id(o) not in dropped and _inside(o["box"], t["box"]) >= 0.8
+        ]
+        if sum(map(_area, inside)) >= 0.5 * _area(t["box"]):
+            dropped.add(id(t))
+    return dropped
+
+
 def reading_order(found: list[dict], right_to_left: bool) -> list[dict]:
     """Rows of regions that overlap vertically, top to bottom, each row read right to left
     (manga, in any language: translated editions keep the layout) or left to right (comics).
@@ -41,9 +59,11 @@ def reading_order(found: list[dict], right_to_left: bool) -> list[dict]:
 
 def regions(detected: list[dict], right_to_left: bool = True) -> list[dict]:
     bubbles = [d["box"] for d in detected if d["label"] == "bubble"]
+    texts = [d for d in detected if d["label"] != "bubble"]
+    merged = _merged(texts)
     found = []
-    for d in detected:
-        if d["label"] == "bubble":
+    for d in texts:
+        if id(d) in merged:
             continue
         holder = max(bubbles, key=lambda b: _inside(d["box"], b), default=None)
         if holder is not None and _inside(d["box"], holder) < 0.5:
