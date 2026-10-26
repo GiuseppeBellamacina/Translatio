@@ -200,7 +200,17 @@ class JobRunner:
                 }
         except Exception as e:
             error = str(e)
-            self.events.publish(book_id, {"event": "error", "message": f"Translation failed: {e}"})
+            if type(e).__name__ == "RateLimitError":  # out of quota (any SDK): resume it later
+                status = BookStatus.paused
+                final_message = {
+                    "event": "cancelled",
+                    "message": "Translation paused: the provider's rate limit or quota is "
+                    f"exhausted, resume it later ({e})",
+                }
+            else:
+                self.events.publish(
+                    book_id, {"event": "error", "message": f"Translation failed: {e}"}
+                )
         finally:
             for knowledge_store in held:
                 self.knowledge.release(knowledge_store)
