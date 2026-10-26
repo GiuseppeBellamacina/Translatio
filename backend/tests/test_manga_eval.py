@@ -1,11 +1,13 @@
 """Manga evaluation harness: metrics, sample pages, eval script."""
 
+import json
 from collections import Counter
 
 import pymupdf
 
 from app.services.manga.metrics import edit_distance, iou, match, rates, score_page
 from scripts.make_sample_manga import HEIGHT, REGIONS, WIDTH, sample_page
+from scripts.manga_eval import DETECTORS, evaluate
 
 
 def test_iou_and_match():
@@ -53,3 +55,26 @@ def test_sample_page_has_ground_truth():
     for region, (_, area, text, *_) in zip(truth, REGIONS, strict=True):
         assert pymupdf.Rect(area).contains(pymupdf.Rect(region["box"]))
         assert region["text"] == " ".join(text.split())
+
+
+async def test_eval_scores_and_bootstraps(tmp_path):
+    png, truth = sample_page()
+    for name in ("page-2", "page-10"):
+        (tmp_path / f"{name}.png").write_bytes(png)
+    (tmp_path / "page-10.json").write_text(json.dumps({"boxes": truth}))
+
+    rows, total = await evaluate(tmp_path, DETECTORS["truth"])
+    assert [name for name, _ in rows] == ["page-10.png"]  # no ground truth, not scored
+    assert rates(total) == {"precision": 1, "recall": 1, "sfx_included": 0, "cer": 0}
+
+    async def everything(image):
+        return truth
+
+    _, total = await evaluate(tmp_path, everything)
+    assert rates(total)["sfx_included"] == 1 and rates(total)["precision"] == 0.75
+
+    rows, _ = await evaluate(tmp_path, everything, bootstrap=True)
+    assert json.loads((tmp_path / "page-2.json").read_text())["boxes"] == truth
+    assert [name for name, _ in rows] == ["page-10.png"]  # natural order, draft not scored
+    rows, _ = await evaluate(tmp_path, everything)
+    assert [name for name, _ in rows] == ["page-2.png", "page-10.png"]
