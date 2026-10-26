@@ -133,7 +133,7 @@ class JobRunner:
                 target_language=config.target_language or book.target_language or "italian",
                 chunker=make_chunker(params.get("chunk_tokens", settings.chunk_tokens)),
                 max_retries=1,
-                style_instructions=config.style_instructions,
+                style_instructions="\n".join(filter(None, [doc.style, config.style_instructions])),
                 enable_review=config.enable_review,
                 doubt_review=config.doubt_review,
                 features=Features(**config.model_dump(include={f.name for f in fields(Features)})),
