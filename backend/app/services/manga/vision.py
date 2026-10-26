@@ -69,18 +69,29 @@ def sheets(image: bytes, boxes: list[list[float]]) -> list[tuple[bytes, int]]:
     return found
 
 
+async def _sheet(png: bytes, count: int, llm: BaseChatModel) -> list[str]:
+    def check(result: Transcription) -> list[str]:
+        if len(result.texts) != count:  # retried: a lost or merged box shifts every text
+            raise ValueError(f"{len(result.texts)} texts for {count} boxes")
+        return result.texts
+
+    chain = (PROMPT | structured(llm, Transcription) | RunnableLambda(check)).with_retry(
+        stop_after_attempt=max(1, settings.chain_retries), wait_exponential_jitter=True
+    )
+    return await chain.ainvoke({"count": count, "sheet": base64.b64encode(png).decode()})
+
+
 async def read(image: bytes, boxes: list[list[float]], llm: BaseChatModel) -> list[str]:
     """The text of each box, read by ``llm`` (a vision model)."""
     texts: list[str] = []
     for png, count in sheets(image, boxes):
-
-        def check(result: Transcription, count: int = count) -> list[str]:
-            if len(result.texts) != count:  # retried: a lost or merged box shifts every text
-                raise ValueError(f"{len(result.texts)} texts for {count} boxes")
-            return result.texts
-
-        chain = (PROMPT | structured(llm, Transcription) | RunnableLambda(check)).with_retry(
-            stop_after_attempt=max(1, settings.chain_retries), wait_exponential_jitter=True
-        )
-        texts += await chain.ainvoke({"count": count, "sheet": base64.b64encode(png).decode()})
+        try:
+            texts += await _sheet(png, count, llm)
+        except Exception:
+            if count == 1:
+                raise
+            # a sheet the model keeps miscounting (or looping on): its boxes one at a time
+            for box in boxes[len(texts) : len(texts) + count]:
+                ((single, _),) = sheets(image, [box])
+                texts += await _sheet(single, 1, llm)
     return [clean(t) for t in texts]

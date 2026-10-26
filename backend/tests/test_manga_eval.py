@@ -171,3 +171,19 @@ async def test_vision_read_retries_a_wrong_count(monkeypatch):
     assert len(llm.calls_for(Transcription)) == 2
     # the fake provider answers one text per box
     assert await vision_read(png, [t["box"] for t in truth], FakeChatModel()) == ["BAU"] * 4
+
+
+async def test_vision_read_falls_back_to_single_boxes(monkeypatch):
+    png, truth = sample_page()
+    llm = ScriptedLLM()
+    # a model that always returns one text too many on a sheet of several boxes
+    llm.handlers[Transcription] = lambda text, call: Transcription(
+        texts=["A", "B"] if "Boxes: 1." in text else ["A"] * 5
+    )
+    monkeypatch.setattr(settings, "chain_retries", 1)
+    with pytest.raises(ValueError):
+        await vision_read(png, [truth[0]["box"]], llm)
+    llm.handlers[Transcription] = lambda text, call: Transcription(
+        texts=["A"] if "Boxes: 1." in text else ["A"] * 5
+    )
+    assert await vision_read(png, [t["box"] for t in truth], llm) == ["A"] * 4
