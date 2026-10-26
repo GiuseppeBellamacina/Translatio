@@ -2,7 +2,7 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-**Translatio** translates EPUB and PDF books with LLMs, keeping format and layout. The README has the user-facing overview and `docs/translation-graph.svg` the chapter graph.
+**Translatio** translates EPUB and PDF books, and manga/comics (CBZ, page folders, scanned PDFs: OCR first, then erased and re-lettered pages), with LLMs, keeping format and layout. The README has the user-facing overview and `docs/translation-graph.svg` the chapter graph.
 
 ## Commands
 
