@@ -113,7 +113,7 @@ Measured results are in [docs/manga-eval.md](docs/manga-eval.md); the design is 
 
 ## Usage
 
-1. **Upload** one or more EPUB/PDF files (or manga chapters as CBZ/ZIP, see [Manga mode](#manga-mode)). A single book shows its cost estimate per model.
+1. **Upload** one or more EPUB/PDF files, or manga chapters as CBZ/ZIP or as a folder of page images (see [Manga mode](#manga-mode)). A single book shows its cost estimate per model.
 2. **Translate**: pick provider, model, optional reviewer model, languages and style, then start — or **Queue N books** to translate several in a row.
 3. **Follow** the progress live; edit the glossary and the compendium whenever the translation is paused. You can close the page: the job runs on the server.
 4. **Preview** original and translation side by side, then **Download** the translated file.
