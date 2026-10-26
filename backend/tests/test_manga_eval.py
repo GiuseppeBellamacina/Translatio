@@ -69,7 +69,7 @@ async def test_eval_scores_and_bootstraps(tmp_path):
 
     rows, total = await evaluate(tmp_path, DETECTORS["truth"])
     assert [name for name, _ in rows] == ["page-10.png"]  # no ground truth, not scored
-    assert rates(total) == {"precision": 1, "recall": 1, "sfx_included": 0, "cer": 0}
+    assert rates(total) == {"precision": 1, "recall": 1, "sfx_included": 0, "cer": 0, "order": 1}
 
     async def everything(image):
         return truth
@@ -96,3 +96,10 @@ async def test_detect_client(monkeypatch):
         await detect(b"png")
     monkeypatch.setattr(settings, "manga_ml_url", "http://ml:8100")
     assert await detect(b"png", transport=httpx.MockTransport(reply)) == regions
+
+
+def test_order_score():
+    truth = [{"box": [0, i * 100, 50, i * 100 + 50], "kind": "dialogue"} for i in range(3)]
+    assert rates(score_page(truth, truth))["order"] == 1
+    assert rates(score_page(truth[::-1], truth))["order"] == 0
+    assert rates(score_page([truth[1], truth[0], truth[2]], truth))["order"] == 0.5

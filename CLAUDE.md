@@ -83,6 +83,11 @@ Monorepo: `backend/` (FastAPI + LangChain/LangGraph + async SQLAlchemy/aiosqlite
 - **GPU service** (`ml/`, started with the `docker-compose.manga.yml` override on an NVIDIA GPU): the ML models live there, so the backend image and the tests have no ML dependencies.
   - `POST /detect` (raw image body) runs `ogkalu/comic-text-and-bubble-detector` (RT-DETR-v2, Apache-2.0) and returns boxes labelled `bubble` / `text_bubble` / `text_free`.
   - Weights are cached in the `ml_models` volume.
+  - `regions.py` turns the boxes into regions:
+    - text in a bubble is `dialogue`, and its bubble box is kept;
+    - free text is a `caption`, or `sfx` when its short side exceeds `SFX_SCALE` times the page's median bubble text (a shortcut until OCR gives a glyph size); SFX are never translated;
+    - the order is rows by vertical overlap, right to left for Japanese.
+  - `manga_eval.py --detector regions` (the default) scores it; it reads pages under a `ja` folder right to left.
   - The backend reaches it through `manga_ml_url` (`TRANSLATIO_MANGA_ML_URL`, empty = manga mode unavailable) with `app/services/manga/detect.py`; tests use `httpx.MockTransport`.
 
 Progress events are forwarded to the client as `{"event": event_type, chapter_index, total_chapters, chunk_index, total_chunks, message, data, ts}` (bulky `translations`/`translated_html` stripped). `src/hooks/useTranslationWs.ts` keeps the raw events (newest first). `src/lib/jobEvents.ts` derives the live chunks (`liveChunks`, using `chunk_translated.data.source_text`/`translated_text` and the review events) and the activity rows (`logEntries`). Event names are a contract with that file.
