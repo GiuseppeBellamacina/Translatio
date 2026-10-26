@@ -98,7 +98,7 @@ def main() -> None:
     rows, total = asyncio.run(evaluate(args.folder, DETECTORS[args.detector], args.bootstrap))
     print(
         f"{'page':<28} {'pred':>5} {'truth':>5} {'hits':>5} {'prec':>6} {'recall':>6} "
-        f"{'sfx':>6} {'cer':>6} {'ms/page':>7}"
+        f"{'sfx':>6} {'cer':>6} {'order':>6} {'ms/page':>7}"
     )
     for name, counts in rows:
         print(_line(name, counts))

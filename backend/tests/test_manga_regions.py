@@ -37,3 +37,15 @@ def test_sound_effects_are_left_alone():
     assert all(r["kind"] != "sfx" for r in kept)
     # without bubble text on the page there is no scale to compare with: free text is kept
     assert [r["kind"] for r in regions(SAMPLE[4:])] == ["caption", "caption"]
+
+
+def test_reading_order():
+    def box(x0, y0, x1, y1):
+        return {"box": [x0, y0, x1, y1], "label": "text_free", "score": 1}
+
+    # two panels side by side (one taller), then a wide one below
+    page = [box(0, 300, 300, 360), box(400, 10, 700, 80), box(20, 20, 300, 100)]
+    page += [box(410, 120, 700, 200), box(450, 140, 690, 210)]
+    order = lambda rtl: [r["box"][:2] for r in regions(page, rtl)]  # noqa: E731
+    assert order(False) == [[20, 20], [400, 10], [410, 120], [450, 140], [0, 300]]
+    assert order(True) == [[400, 10], [20, 20], [450, 140], [410, 120], [0, 300]]

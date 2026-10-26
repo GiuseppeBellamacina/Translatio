@@ -1,7 +1,8 @@
 """Scores of manga text detection and OCR against hand-checked ground truth.
 
 A region is a dict ``{"box": [x0, y0, x1, y1], "kind": "dialogue|caption|sfx", "text": ...}``
-in page pixels. Sound effects in the ground truth must *not* be detected; the rest must.
+in page pixels, listed in reading order. Sound effects in the ground truth must *not* be
+detected; the rest must, in that order.
 """
 
 from collections import Counter
@@ -63,6 +64,11 @@ def score_page(pred: list[dict], truth: list[dict]) -> Counter:
         sfx=len(sfx),
         sfx_hits=len(match(boxes, [t["box"] for t in sfx])),
     )
+    found_at = {j: i for i, j in pairs}  # ground truth is listed in reading order
+    for j in range(len(wanted) - 1):
+        if j in found_at and j + 1 in found_at:
+            counts["order_pairs"] += 1
+            counts["order_ok"] += found_at[j] < found_at[j + 1]
     for i, j in pairs:
         if pred[i].get("text") is not None and wanted[j].get("text"):
             text, expected = _clean(pred[i]["text"]), _clean(wanted[j]["text"])
@@ -82,4 +88,5 @@ def rates(counts: Counter) -> dict[str, float | None]:
         "recall": ratio("hits", "truth"),
         "sfx_included": ratio("sfx_hits", "sfx"),
         "cer": ratio("errors", "chars"),
+        "order": ratio("order_ok", "order_pairs"),
     }
