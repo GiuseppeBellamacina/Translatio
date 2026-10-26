@@ -23,7 +23,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from app.services.manga.detect import TEXT_LABELS  # noqa: E402
 from app.services.manga.detect import detect as ml_detect  # noqa: E402
 from app.services.manga.metrics import SFX, rates, score_page  # noqa: E402
-from app.services.manga.regions import text_regions  # noqa: E402
+from app.services.manga.regions import regions, text_regions  # noqa: E402
 
 IMAGES = {".png", ".jpg", ".jpeg", ".webp"}
 Detector = Callable[[Path], Awaitable[list[dict]]]
@@ -46,6 +46,11 @@ async def _regions(image: Path) -> list[dict]:
     return text_regions(detected, right_to_left="ja" in image.parts)
 
 
+async def _all_regions(image: Path) -> list[dict]:
+    """Every region in reading order, SFX labelled: the drafts of `--bootstrap`."""
+    return regions(await ml_detect(image.read_bytes()), right_to_left="ja" in image.parts)
+
+
 DETECTORS: dict[str, Detector] = {"truth": _truth, "ml": _ml, "regions": _regions}
 
 
@@ -58,24 +63,28 @@ def _pages(folder: Path) -> list[Path]:
 
 
 async def evaluate(
-    folder: Path, detect: Detector, bootstrap: bool = False
+    folder: Path, detect: Detector, draft: Detector | None = None
 ) -> tuple[list[tuple[str, Counter]], Counter]:
-    """Counts per scored page (with the detector's milliseconds) and their total."""
+    """Counts per scored page (with the detector's milliseconds) and their total.
+
+    Pages without ground truth are not scored; with ``draft`` they get one to correct by hand.
+    """
     rows, total = [], Counter()
     for image in _pages(folder):
         truth = image.with_suffix(".json")
-        if not truth.exists() and not bootstrap:
+        if not truth.exists():
+            if draft:
+                boxes = [
+                    {"box": r["box"], "kind": r["kind"], "text": r.get("text", "")}
+                    for r in await draft(image)
+                ]
+                truth.write_text(
+                    json.dumps({"boxes": boxes}, indent=2, ensure_ascii=False), "utf-8"
+                )
             continue
         start = time.perf_counter()
         pred = await detect(image)
         ms = round((time.perf_counter() - start) * 1000)
-        if not truth.exists():
-            draft = [
-                {"box": p["box"], "kind": p.get("kind", "dialogue"), "text": p.get("text", "")}
-                for p in pred
-            ]
-            truth.write_text(json.dumps({"boxes": draft}, indent=2, ensure_ascii=False), "utf-8")
-            continue
         counts = score_page(pred, json.loads(truth.read_text(encoding="utf-8"))["boxes"])
         counts["ms"] = ms
         rows.append((image.name, counts))
@@ -100,9 +109,13 @@ def main() -> None:
     )
     parser.add_argument("folder", type=Path)
     parser.add_argument("--detector", choices=DETECTORS, default="regions")
-    parser.add_argument("--bootstrap", action="store_true", help="write missing ground truth")
+    parser.add_argument(
+        "--bootstrap", action="store_true", help="draft missing ground truth, SFX included"
+    )
     args = parser.parse_args()
-    rows, total = asyncio.run(evaluate(args.folder, DETECTORS[args.detector], args.bootstrap))
+    rows, total = asyncio.run(
+        evaluate(args.folder, DETECTORS[args.detector], _all_regions if args.bootstrap else None)
+    )
     print(
         f"{'page':<28} {'pred':>5} {'truth':>5} {'hits':>5} {'prec':>6} {'recall':>6} "
         f"{'sfx':>6} {'cer':>6} {'order':>6} {'ms/page':>7}"
