@@ -3,7 +3,7 @@ import { Link, useNavigate } from "react-router-dom";
 import { AlertCircle, ArrowRight, FileText, Languages, ListOrdered, ShieldCheck, Upload } from "lucide-react";
 import { api, type Book } from "../lib/api";
 import { buttonClass } from "../lib/styles";
-import { cn } from "../lib/utils";
+import { bookKind, bookTitle, cn } from "../lib/utils";
 import { CostEstimate } from "../components/CostEstimate";
 import { SortableItem, SortableList } from "../components/SortableList";
 import { QueueDialog } from "../components/QueueDialog";
@@ -15,7 +15,7 @@ const STEPS = [
   { icon: ShieldCheck, label: "Review", desc: "Quality control" },
 ];
 
-const bookName = (b: Book) => b.filename.replace(/\.(epub|pdf)$/i, "");
+const bookName = (b: Book) => bookTitle(b.filename);
 
 export function UploadPage() {
   const [isDragging, setIsDragging] = useState(false);
@@ -46,6 +46,18 @@ export function UploadPage() {
     setUploaded(books);
   }, []);
 
+  const handleFolder = useCallback(async (files: File[]) => {
+    const name = files[0].webkitRelativePath.split("/")[0] || "pages";
+    setUploading({ done: 0, total: 1 });
+    try {
+      setUploaded([await api.uploadFolder(name, files)]);
+      setErrors([]);
+    } catch (e) {
+      setErrors([`${name}: ${e instanceof Error ? e.message : "upload failed"}`]);
+    }
+    setUploading(null);
+  }, []);
+
   const reorder = (ids: (string | number)[]) =>
     setUploaded((books) => ids.map((id) => books.find((b) => b.id === id)!));
 
@@ -67,10 +79,9 @@ export function UploadPage() {
 
   if (uploaded.length === 1) {
     const [book] = uploaded;
-    const isPdf = book.filename.toLowerCase().endsWith(".pdf");
     return (
       <Page
-        eyebrow={`${isPdf ? "PDF" : "EPUB"} · ${book.total_chapters} ${isPdf ? "pages" : "chapters"} uploaded`}
+        eyebrow={`${bookKind(book)} uploaded`}
         title={bookName(book)}
         actions={
           <>
@@ -108,14 +119,13 @@ export function UploadPage() {
         <SortableList ids={uploaded.map((b) => b.id)} onReorder={reorder}>
         <ol className="m-0 flex list-none flex-col gap-3 p-0">
           {uploaded.map((book, n) => {
-            const isPdf = book.filename.toLowerCase().endsWith(".pdf");
             return (
               <SortableItem key={book.id} id={book.id} label={bookName(book)} className="flex items-center gap-4 rounded-md border border-line bg-surface p-5">
                   <span className="w-5 text-right font-serif text-faint">{n + 1}</span>
                   <div className="min-w-0 flex-1">
                     <div className="truncate font-serif text-xl font-medium">{bookName(book)}</div>
                     <div className="mt-1 text-[13px] text-muted">
-                      {isPdf ? "PDF" : "EPUB"} · {book.total_chapters} {isPdf ? "pages" : "chapters"}
+                      {bookKind(book)}
                     </div>
                   </div>
                   <Link to={`/translate/${book.id}`} className={buttonClass("secondary", "sm")}>
@@ -136,7 +146,7 @@ export function UploadPage() {
   return (
     <Page
       title="Translate a book"
-      description="Upload one or more EPUB or PDF files. The translation keeps the same format and layout; only the language changes."
+      description="Upload one or more EPUB or PDF files, or manga chapters. The translation keeps the same format and layout; only the language changes."
     >
       <label
         onDragOver={(e) => {
@@ -181,6 +191,21 @@ export function UploadPage() {
           onChange={(e) => {
             if (e.target.files?.length) handleFiles([...e.target.files]);
             e.target.value = ""; // the same files can be picked again
+          }}
+          disabled={!!uploading}
+        />
+      </label>
+
+      <label className="-mt-2 self-center text-sm text-muted">
+        or a <span className="cursor-pointer font-semibold text-ink underline">folder of manga pages</span>
+        <input
+          type="file"
+          multiple
+          className="sr-only"
+          {...{ webkitdirectory: "" }}
+          onChange={(e) => {
+            if (e.target.files?.length) handleFolder([...e.target.files]);
+            e.target.value = "";
           }}
           disabled={!!uploading}
         />

@@ -73,6 +73,15 @@ export const api = {
     if (!res.ok) throw await errorFrom(res);
     return res.json();
   },
+  /** A folder of manga page images, packed into a CBZ on the server. */
+  uploadFolder: async (name: string, files: File[]): Promise<Book> => {
+    const form = new FormData();
+    form.append("name", name);
+    for (const file of files) form.append("files", file, file.webkitRelativePath || file.name);
+    const res = await fetch(`${API_BASE}/upload-folder`, { method: "POST", body: form });
+    if (!res.ok) throw await errorFrom(res);
+    return res.json();
+  },
   getPreview: (bookId: number, chapter: number) =>
     request<Preview>(`/books/${bookId}/preview?chapter_index=${chapter}`),
   downloadBook: (bookId: number) => `${API_BASE}/books/${bookId}/download`,
