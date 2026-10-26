@@ -19,6 +19,7 @@ from app.agents.pipeline import TranslationProgress
 from app.services.chunker import SmartChunker, TextBlock
 from app.services.documents import Document, Translations, Unit
 from app.services.manga.detect import detect
+from app.services.manga.erase import erase
 from app.services.manga.panels import panels
 from app.services.manga.regions import text_regions
 
@@ -30,15 +31,24 @@ def _natural(name: str) -> list:
     return [int(t) if t.isdigit() else t for t in re.split(r"(\d+)", name)]
 
 
+def _write(path: Path, data: bytes) -> None:
+    """Whole or absent: an interrupted write leaves the page to do again."""
+    temporary = path.with_suffix(".tmp")
+    temporary.write_bytes(data)
+    temporary.replace(path)
+
+
 def cache_dir(path: Path) -> Path:
     return path.with_name(path.name + ".pages")
 
 
-def _typeset(image: bytes, regions: list[dict], translations: list[str | None]) -> bytes:
-    """The page with each translated region's text replaced.
+def _typeset(
+    image: bytes, regions: list[dict], translations: list[str | None], erased: bool
+) -> bytes:
+    """The page with each translated region's text written in its box.
 
-    shortcut: a white box over the original text box and the translation fitted in it; the
-    real erasing (bubble fill, inpainting over art) and typesetting are epic items 6-7.
+    shortcut: the translation is fitted in the original text box (proper typesetting is epic
+    item 7); a page not erased gets a white box under it.
     """
     pix = pymupdf.Pixmap(image)
     page = pymupdf.open().new_page(width=pix.width, height=pix.height)
@@ -47,7 +57,8 @@ def _typeset(image: bytes, regions: list[dict], translations: list[str | None]) 
         if text is None:
             continue
         box = pymupdf.Rect(region["box"]) + (-3, -3, 3, 3)
-        page.draw_rect(box, color=None, fill=(1, 1, 1))
+        if not erased:
+            page.draw_rect(box, color=None, fill=(1, 1, 1))
         page.insert_htmlbox(
             box,
             f'<p style="text-align:center;font-family:sans-serif;font-weight:bold;'
@@ -83,6 +94,10 @@ class MangaDocument(Document):
     def _cached(self, index: int) -> Path:
         return self.cache / f"page-{index + 1}.json"
 
+    def _clean(self, index: int) -> Path:
+        """The page with its lettering erased."""
+        return self.cache / f"page-{index + 1}.png"
+
     def regions(self, index: int) -> list[dict]:
         """The page's text regions in reading order (empty until the page is read)."""
         cached = self._cached(index)
@@ -111,7 +126,8 @@ class MangaDocument(Document):
     async def prepare(
         self, reader: Reader | None, cancelled: asyncio.Event
     ) -> AsyncIterator[TranslationProgress]:
-        """Read the pages not read yet; stops early when the run is cancelled."""
+        """Read the pages not read yet, then erase their lettering (a page read before is only
+        erased); stops early when the run is cancelled."""
         if reader is None:
             raise ValueError("A manga needs an OCR reader")
         self.cache.mkdir(exist_ok=True)
@@ -119,21 +135,23 @@ class MangaDocument(Document):
         for index in range(total):
             if cancelled.is_set():
                 return
-            if self._cached(index).exists():
+            if self._clean(index).exists():
                 continue
             image = self.image(index)
-            detected = await detect(image)
-            order = panels(image, [d["box"] for d in detected], self.right_to_left)
-            found = text_regions(detected, self.right_to_left, order)
-            texts = await reader(image, [r["box"] for r in found])
-            regions = [
-                {"box": r["box"], "kind": r["kind"], "bubble": r["bubble"], "text": t}
-                for r, t in zip(found, texts, strict=True)
-                if t.strip()
-            ]
-            temporary = self._cached(index).with_suffix(".tmp")
-            temporary.write_text(json.dumps(regions, ensure_ascii=False), encoding="utf-8")
-            temporary.replace(self._cached(index))  # whole or absent: a resume reads it again
+            if not self._cached(index).exists():
+                detected = await detect(image)
+                order = panels(image, [d["box"] for d in detected], self.right_to_left)
+                found = text_regions(detected, self.right_to_left, order)
+                texts = await reader(image, [r["box"] for r in found])
+                regions = [
+                    {"box": r["box"], "kind": r["kind"], "bubble": r["bubble"], "text": t}
+                    for r, t in zip(found, texts, strict=True)
+                    if t.strip()
+                ]
+                _write(self._cached(index), json.dumps(regions, ensure_ascii=False).encode())
+            regions = self.regions(index)
+            clean = await erase(image, [r["box"] for r in regions]) if regions else image
+            _write(self._clean(index), clean)
             yield TranslationProgress(
                 event_type="page_read",
                 chapter_index=index,
@@ -147,7 +165,13 @@ class MangaDocument(Document):
             for index, name in enumerate(self.pages):
                 page_translations = translations.get(index)
                 if page_translations and any(t is not None for t in page_translations):
-                    image = _typeset(self.image(index), self.regions(index), page_translations)
+                    clean = self._clean(index)
+                    image = _typeset(
+                        clean.read_bytes() if clean.exists() else self.image(index),
+                        self.regions(index),
+                        page_translations,
+                        erased=clean.exists(),
+                    )
                     out.writestr(str(Path(name).with_suffix(".png")), image)
                 else:
                     out.writestr(name, self.image(index))

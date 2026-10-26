@@ -1,14 +1,19 @@
 """Manga chapters as documents: pages read once (cached), translated through the pipeline."""
 
 import asyncio
+import base64
+import json
 import zipfile
 
+import httpx
 import pymupdf
 
 from app.agents.pipeline import TranslationPipeline
+from app.core.config import settings
 from app.models.schemas import TranslationResult
 from app.services.documents import open_document
 from app.services.manga import document
+from app.services.manga.erase import erase
 from scripts.make_sample_manga import sample_page
 from tests.conftest import ScriptedLLM, translate
 from tests.test_manga_regions import SAMPLE
@@ -28,7 +33,11 @@ def _chapter(tmp_path, monkeypatch, pages: int = 2):
     async def detected(image: bytes) -> list[dict]:
         return SAMPLE
 
+    async def erased(image: bytes, boxes: list) -> bytes:
+        return image
+
     monkeypatch.setattr(document, "detect", detected)
+    monkeypatch.setattr(document, "erase", erased)
     reads = []
 
     async def reader(image: bytes, boxes: list) -> list[str]:
@@ -69,3 +78,23 @@ async def test_a_chapter_is_translated_through_the_pipeline(tmp_path, monkeypatc
         assert out.namelist() == ["p1.png", "p2.png"]
         page = pymupdf.open(stream=out.read("p1.png"), filetype="png")
     assert page[0].rect == pymupdf.Rect(0, 0, 800, 1200)  # same page size, text replaced
+
+
+async def test_pages_read_before_are_only_erased(tmp_path, monkeypatch):
+    path, reads, reader = _chapter(tmp_path, monkeypatch, pages=2)
+    doc = open_document(path)
+    [e async for e in doc.prepare(reader, asyncio.Event())]
+    (doc.cache / "page-2.png").unlink()  # read by an older version: no clean page yet
+    events = [e async for e in doc.prepare(reader, asyncio.Event())]
+    assert [e.chapter_index for e in events] == [1] and reads == [4, 4]  # erased, not read
+    assert (doc.cache / "page-2.png").exists()
+
+
+async def test_erase_client(monkeypatch):
+    def reply(request: httpx.Request) -> httpx.Response:
+        body = json.loads(request.content)
+        assert request.url.path == "/erase" and body["boxes"] == [[1, 2, 3, 4]]
+        return httpx.Response(200, json={"image": base64.b64encode(b"clean").decode()})
+
+    monkeypatch.setattr(settings, "manga_ml_url", "http://ml:8100")
+    assert await erase(b"png", [[1, 2, 3, 4]], httpx.MockTransport(reply)) == b"clean"
