@@ -1,14 +1,16 @@
 # Translatio
 
-Translate whole books — EPUB and PDF — with LLMs, keeping the original format and layout.
-Only the language changes. A per-book glossary and compendium keep names, terms and the
-gender of every character consistent from the first page to the last.
+Translate whole books (EPUB and PDF) and manga or comics (CBZ, folders of pages, scanned PDFs)
+with LLMs, keeping the original format and layout. Only the language changes. A per-book glossary
+and compendium keep names, terms and the gender of every character consistent from the first page
+to the last. Manga pages are read with text detection and OCR, then the original lettering is
+erased and the translation lettered into each bubble.
 
 ![Translating a book: progress, queue, live original/translation and activity](docs/screenshots/translate-running.png)
 
 ## Features
 
-- **Same format, same layout**: EPUB in → EPUB out, PDF in → PDF out. Structure, images, inline formatting and page layout are kept; PDF text is re-typeset in place with metric-compatible fonts (subset, so the file stays the size of the original).
+- **Same format, same layout**: EPUB in → EPUB out, PDF in → PDF out, CBZ in → CBZ out. Structure, images, inline formatting and page layout are kept; PDF text is re-typeset in place with metric-compatible fonts (subset, so the file stays the size of the original).
 - **Or continuous text (PDF)**: with the *Continuous text* switch the translated PDF is laid out again as one flow at the book's own size — no half-empty pages before an illustration, chapters on a new page, illustrations right after the page where the text reaches them, footers, outline and contents links renumbered. The page count may change. `scripts/reflow_pdf.py` does the same for PDFs already translated.
 - **Agentic pipeline on LangGraph**: analysis → per chunk *context → translate → review → learn → finalize* → doubt review ([diagram below](#how-a-chapter-is-translated)). A reviewer flags only major issues and the chunk is retranslated with them.
 - **Glossary**: built while translating, enforced; near-duplicates (*Demon Kings* / *Demon King*, *Kingdom of Asura* / *Asura Kingdom*, spelling variants) are recognised and never added twice. Each prompt gets only the terms its passage uses (plurals and possessives included), the passage's own first.
