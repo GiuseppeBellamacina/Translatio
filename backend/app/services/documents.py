@@ -38,6 +38,7 @@ class Document(ABC):
     format: str
     suffix: str
     media_type: str
+    style: str = ""  # a hint for the translator in every run of this format
 
     @property
     @abstractmethod
