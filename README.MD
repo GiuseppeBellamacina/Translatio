@@ -94,7 +94,7 @@ Manga chapters (`.cbz`/`.zip` of page images) and scanned PDFs (no text layer) a
    - in plain bubbles and caption boxes the lettering is filled with the background colour;
    - text over the artwork is inpainted with [LaMa](https://github.com/advimman/lama).
 3. **Letter**:
-   - the translation goes in each bubble's inscribed area, in Comic Neue (SIL OFL), at the original size or smaller so it fits, centred;
+   - the translation goes in each bubble's inscribed area, in Comic Neue (SIL OFL; Chinese, Japanese and Korean in a built-in fallback font, horizontally), at the original size or smaller so it fits, centred;
    - text over the artwork gets a white outline.
 
 The output has the input's format: CBZ in → CBZ out, scanned PDF in → PDF out. The preview shows the original and translated pages side by side.
