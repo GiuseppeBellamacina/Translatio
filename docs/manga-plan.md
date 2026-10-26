@@ -107,3 +107,19 @@ Check each model's licence before bundling it.
   - before/after page images in the PR;
   - the full suite stays green;
   - cheap or free models only for live tests.
+
+## Status and changes from the plan
+
+Items 1–8 are done. Item 9, the end-to-end evaluation, needs a translated chapter. Each change from the plan comes from a measurement on Spy x Family ch. 1 (Italian edition, `docs/manga-eval.md`):
+
+- **Reading order** (#155, #159): published manga keep the Japanese right-to-left layout in every language, so the direction no longer depends on the source language.
+  - The panels come from the white gutters (a recursive cut).
+  - Magi v2 is not used: its licence is non-commercial only and it needs `trust_remote_code`.
+- **Sound effects** (#157, #173): the size heuristic labelled narration as SFX and was removed. The detector never picks up hand-drawn sound effects, and lettered ones are bracketed by the vision OCR and dropped.
+- **OCR** (#161, #163):
+  - a vision LLM is the accurate choice (CER 0.01 against 0.08 for easyocr, the best local engine), reading each page's crops on numbered sheets;
+  - manga-ocr stays for Japanese sources, which are still unmeasured;
+  - Google Vision and Azure were not tried, for lack of keys.
+- **Erasing** (#169): only ink blobs sized like the box's letters are masked, so hair and screentone inside a caption box survive. LaMa (big-lama TorchScript) is loaded without its pip wrapper.
+- **Formats** (#175): scanned PDFs are read like a manga and written back as PDF. A folder output was dropped: a browser cannot upload a folder, and a CBZ is a zipped folder.
+- **Operations** (#167): a provider out of quota (e.g. OpenRouter's free 50 requests a day) pauses the book instead of failing it.
