@@ -22,14 +22,21 @@ from collections.abc import Awaitable, Callable
 from pathlib import Path
 
 import pymupdf
+from langchain_core.callbacks import UsageMetadataCallbackHandler
+from langchain_core.language_models import BaseChatModel
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from app.core.bootstrap import load_config, load_keys, resolve_providers  # noqa: E402
+from app.core.llm_factory import LLMConfig, create_llm  # noqa: E402
 from app.services.manga.detect import TEXT_LABELS  # noqa: E402
 from app.services.manga.detect import detect as ml_detect  # noqa: E402
 from app.services.manga.metrics import SFX, rates, score_page  # noqa: E402
 from app.services.manga.ocr import ENGINES, read  # noqa: E402
 from app.services.manga.panels import panels  # noqa: E402
 from app.services.manga.regions import regions, text_regions  # noqa: E402
+from app.services.manga.vision import read as vision_read  # noqa: E402
+from app.services.model_catalog import price_for  # noqa: E402
+from app.services.pricing import get_prices  # noqa: E402
 
 IMAGES = {".png", ".jpg", ".jpeg", ".webp"}
 Detector = Callable[[Path], Awaitable[list[dict]]]
@@ -135,6 +142,56 @@ def _line(name: str, counts: Counter, pages: int = 1) -> str:
     )
 
 
+def _vision(spec: str) -> tuple[BaseChatModel, str]:
+    """The chat model of ``llm:PROVIDER:MODEL`` from config.yaml and .env, and its type."""
+    _, name, model = spec.split(":", 2)
+    providers = {p["name"]: p for p in resolve_providers(load_config(), load_keys())}
+    if name not in providers:
+        raise SystemExit(f"provider {name!r} not configured: {', '.join(providers)}")
+    provider = providers[name]
+    config = LLMConfig(
+        provider=provider["type"],
+        model=model,
+        api_key=provider["api_key"],
+        base_url=provider.get("base_url"),
+        structured_output_method=(provider.get("params") or {}).get("structured_output_method"),
+    )
+    return create_llm(config), provider["type"]
+
+
+async def _run(args: argparse.Namespace) -> tuple[list, Counter, tuple | None]:
+    """Scores, and for a vision LLM its token usage and cost."""
+    detect, usage, ocr = DETECTORS[args.detector], UsageMetadataCallbackHandler(), None
+    if args.ocr and args.ocr.startswith("llm:"):
+        llm, provider_type = _vision(args.ocr)
+        llm.callbacks = [usage]
+        ocr = lambda data, boxes: vision_read(data, boxes, llm)  # noqa: E731
+    elif args.ocr:
+        ocr = lambda data, boxes: read(data, boxes, args.ocr, args.lang)  # noqa: E731
+
+    async def with_text(image: Path) -> list[dict]:
+        found = await detect(image)
+        texts = await ocr(image.read_bytes(), [r["box"] for r in found])
+        return [{**r, "text": t} for r, t in zip(found, texts, strict=True)]
+
+    draft = _all_regions if args.bootstrap else None
+    rows, total = await evaluate(args.folder, with_text if ocr else detect, draft)
+    if not usage.usage_metadata:
+        return rows, total, None
+    model = args.ocr.split(":", 2)[2]
+    spent = Counter()
+    for used in usage.usage_metadata.values():
+        spent.update(input_tokens=used["input_tokens"], output_tokens=used["output_tokens"])
+    price = price_for(provider_type, model, await get_prices())
+    dollars = (
+        spent["input_tokens"] * price.input_per_token
+        + spent["output_tokens"] * price.output_per_token
+        if price
+        else 0.0
+    )
+    return rows, total, (f"{spent['input_tokens']} in / {spent['output_tokens']} out", dollars)
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(
         description="Score a manga text detector on pages with ground truth."
@@ -145,23 +202,17 @@ def main() -> None:
         "--bootstrap", action="store_true", help="draft missing ground truth, SFX included"
     )
     parser.add_argument("--ltr", action="store_true", help="read left to right (western comics)")
-    parser.add_argument("--ocr", choices=ENGINES, help="read the regions, to score the CER")
+    parser.add_argument(
+        "--ocr",
+        help=f"read the regions, to score the CER: {', '.join(ENGINES)} or llm:PROVIDER:MODEL",
+    )
     parser.add_argument("--lang", default="en", help="source language code for the OCR")
     args = parser.parse_args()
+    if args.ocr and args.ocr not in ENGINES and not args.ocr.startswith("llm:"):
+        parser.error(f"unknown OCR {args.ocr!r}")
     global right_to_left
     right_to_left = not args.ltr
-    detect = DETECTORS[args.detector]
-
-    async def with_text(image: Path) -> list[dict]:
-        found = await detect(image)
-        texts = await read(image.read_bytes(), [r["box"] for r in found], args.ocr, args.lang)
-        return [{**r, "text": t} for r, t in zip(found, texts, strict=True)]
-
-    rows, total = asyncio.run(
-        evaluate(
-            args.folder, with_text if args.ocr else detect, _all_regions if args.bootstrap else None
-        )
-    )
+    rows, total, cost = asyncio.run(_run(args))
     print(
         f"{'page':<28} {'pred':>5} {'truth':>5} {'hits':>5} {'prec':>6} {'recall':>6} "
         f"{'sfx':>6} {'cer':>6} {'order':>6} {'ms/page':>7}"
@@ -170,6 +221,11 @@ def main() -> None:
         print(_line(name, counts))
     if rows:
         print(_line(f"TOTAL ({len(rows)} pages)", total, len(rows)))
+    if cost:
+        tokens, dollars = cost
+        print(
+            f"OCR tokens {tokens}; ${dollars:.4f} in all, ${dollars / max(len(rows), 1):.5f}/page"
+        )
 
 
 if __name__ == "__main__":

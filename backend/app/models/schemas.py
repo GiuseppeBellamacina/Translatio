@@ -152,3 +152,12 @@ class ReviewResult(BaseModel):
     @property
     def approved(self) -> bool:
         return not self.major_issues and not self.glossary_violations
+
+
+class Transcription(BaseModel):
+    """OCR of numbered text boxes by a vision model (app/services/manga/vision.py)."""
+
+    texts: list[str] = Field(
+        default_factory=list,
+        description="The text of each numbered box, box 1 first, exactly as written",
+    )
